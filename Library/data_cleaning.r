@@ -3,14 +3,8 @@ library(Metrics)
 library(text2vec)
 library(SentimentAnalysis)
 library(caret)
-# library(tree)
 library(class)
 library(readr)
-# library(e1071)
-# library(naivebayes)
-# library(ROCR)
-# library(glmnet)
-
 
 # function declarations 
 
@@ -127,24 +121,26 @@ dc_sean <- function(dataframe) {
       city = as.factor(city) # fixed 2023-4-6
     ) %>%
     # column dropping, some are dropped temporarily, some are permanently
-    select(!c(
-      experiences_offered, # should drop cuz it is monotonous
-      access,
-      description,
-      host_about,
-      host_name,
-      house_rules,
-      interaction,
-      name,
-      neighborhood_overview,
-      notes,
-      space,
-      street,
-      summary,
-      transit,
-      jurisdiction_names,
-      license
-    ))
+    # select(
+    #   !c(
+    #   experiences_offered, # should drop cuz it is monotonous
+    #   access,
+    #   description,
+    #   host_about,
+    #   host_name,
+    #   house_rules,
+    #   interaction,
+    #   name,
+    #   neighborhood_overview,
+    #   notes,
+    #   space,
+    #   street,
+    #   summary,
+    #   transit,
+    #   jurisdiction_names,
+    #   license
+    # )
+    # )
   
   return(dataframe)
 }
@@ -332,44 +328,6 @@ dc_quinn <- function(dataframe) {
 }
 
 
-get_cleaned <- function(folder_dir) {
-  wd <- getwd()
-  setwd(folder_dir)
-  y_train <- read.csv('airbnb_train_y_2023.csv')
-  x_train <- read.csv('airbnb_train_x_2023.csv')
-  x_test <- read.csv('airbnb_test_x_2023.csv')
-  setwd(wd)
-  
-  row_train <- nrow(x_train)
-  row_test <- nrow(x_test)
-  
-  data_all <- dc_preprocess(x_train, x_test, y_train) %>%
-    dc_jingruo() %>%
-    dc_xiaoze() %>%
-    dc_johannah() %>%
-    dc_quinn() %>%
-    dc_sean()
-  
-  row_total = nrow(data_all)
-  
-  assert_row_count = row_total == row_train + row_test
-  if (!assert_row_count) {
-    stop("Error: Row count of output dataframe different from the sum of train and test dataframe!")
-  }
-
-  colwise_na_count = count_col_na(data_all)
-  if (any(colwise_na_count)) {
-      warning(paste(
-        "Warning: Missing values in output dataframe! Columns are:",
-        names(data_all)[which(colwise_na_count > 0)]
-      )
-    )
-  }
-  
-  return(data_all)
-} 
-
-
 export_cleaned <- function(folder_dir) {
   wd <- getwd()
   setwd(folder_dir)
@@ -396,9 +354,9 @@ export_cleaned <- function(folder_dir) {
   
   colwise_na_count = count_col_na(df)
   if (any(colwise_na_count)) {
-    warning(paste(
-      "Warning: Missing values in output dataframe! Columns are:",
-      names(df)[which(colwise_na_count > 0)]
+    warning(c(
+      "Missing values in output dataframe! Columns are:\n",
+      paste(names(df)[which(colwise_na_count > 0)], collapse = ', ')
       )
     )
   }
