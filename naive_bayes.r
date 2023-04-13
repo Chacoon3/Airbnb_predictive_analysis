@@ -17,6 +17,7 @@ y_train <- read.csv('Data\\airbnb_train_y_2023.csv')
 hbr <- y_train$high_booking_rate
 prs <- y_train$perfect_rating_score
 
+
 # test
 nrow(x_train) == nrow(y_train)
 nrow(x_test) == 12205
