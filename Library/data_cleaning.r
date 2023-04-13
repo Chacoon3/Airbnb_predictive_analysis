@@ -378,6 +378,7 @@ export_cleaned <- function(folder_dir) {
   y_train <- read.csv('airbnb_train_y_2023.csv')
   setwd(wd)
   
+
   row_train <- nrow(x_train)
   row_test <- nrow(x_test)
   df <- dc_preprocess(x_train, x_test, y_train) %>%
@@ -387,22 +388,22 @@ export_cleaned <- function(folder_dir) {
     dc_quinn() %>%
     dc_sean()
   
-  row_total = nrow(data_all)
+  row_total <- nrow(df)
   assert_row_count = row_total == row_train + row_test
   if (!assert_row_count) {
     stop("Error: Row count of output dataframe different from the sum of train and test dataframe!")
   }
   
-  colwise_na_count = count_col_na(data_all)
+  colwise_na_count = count_col_na(df)
   if (any(colwise_na_count)) {
     warning(paste(
       "Warning: Missing values in output dataframe! Columns are:",
-      names(data_all)[which(colwise_na_count > 0)]
+      names(df)[which(colwise_na_count > 0)]
       )
     )
   }
   
-  x <- data_all %>%
+  x <- df %>%
     select(!c(high_booking_rate, perfect_rating_score))
   x_train_clean <- x[1:row_train, ]
   x_test_clean <- x[(row_train + 1): row_total, ]
