@@ -3,6 +3,7 @@
 source('Library\\data_cleaning.r')
 
 # replace the string with the directory of the project folder "Data"
+# the original datasets MUST be placed under the Data folder for the following script to run correctly.
 folder_dir = r"(C:\Users\Chaconne\Documents\学业\UMD\Courses\758T Predictive\785T_Pred_Assignment\GA\Airbnb_predictive_analysis\Data)"
 
 # This line needs only to be run once, which exports two csv files, one for the training X's, the other for the testing X's. Once the two files were created you only need to run the read.csv statements under this line.
