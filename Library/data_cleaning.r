@@ -85,31 +85,31 @@ dc_sean <- function(dataframe) {
   
   # feature engineering 
   dataframe <- dataframe %>%
-    mutate(
-      access_snmt = analyzeSentiment(dataframe$access)$SentimentQDAP,
-      access_snmt = replace_na(access_snmt, 0),
-
-      desc_snmt = analyzeSentiment(dataframe$description)$SentimentQDAP,
-      desc_snmt = replace_na(desc_snmt, 0),
-
-      host_about_snmt = analyzeSentiment(dataframe$host_about)$SentimentQDAP,
-      host_about_snmt = replace_na(host_about_snmt, 0),
-
-      house_rules_snmt = analyzeSentiment(dataframe$rules)$SentimentQDAP,
-      house_rules_snmt = replace_na(house_rules_snmt, 0),
-
-      interaction_snmt = analyzeSentiment(dataframe$interaction)$SentimentQDAP,
-      interaction_snmt = replace_na(interaction_snmt, 0),
-
-      neighborhood_snmt = analyzeSentiment(dataframe$neighborhood)$SentimentQDAP,
-      neighborhood_snmt = replace_na(neighborhood_snmt, 0),
-
-      notes_snmt = analyzeSentiment(dataframe$notes)$SentimentQDAP,
-      notes_snmt = replace_na(notes_snmt, 0),
-
-      summary_snmt = analyzeSentiment(dataframe$summary)$SentimentQDAP,
-      summary_snmt = replace_na(summary_snmt, 0),
-    ) %>%
+    # mutate(
+    #   access_snmt = analyzeSentiment(dataframe$access)$SentimentQDAP,
+    #   access_snmt = replace_na(access_snmt, 0),
+    # 
+    #   desc_snmt = analyzeSentiment(dataframe$description)$SentimentQDAP,
+    #   desc_snmt = replace_na(desc_snmt, 0),
+    # 
+    #   host_about_snmt = analyzeSentiment(dataframe$host_about)$SentimentQDAP,
+    #   host_about_snmt = replace_na(host_about_snmt, 0),
+    # 
+    #   house_rules_snmt = analyzeSentiment(dataframe$rules)$SentimentQDAP,
+    #   house_rules_snmt = replace_na(house_rules_snmt, 0),
+    # 
+    #   interaction_snmt = analyzeSentiment(dataframe$interaction)$SentimentQDAP,
+    #   interaction_snmt = replace_na(interaction_snmt, 0),
+    # 
+    #   neighborhood_snmt = analyzeSentiment(dataframe$neighborhood)$SentimentQDAP,
+    #   neighborhood_snmt = replace_na(neighborhood_snmt, 0),
+    # 
+    #   notes_snmt = analyzeSentiment(dataframe$notes)$SentimentQDAP,
+    #   notes_snmt = replace_na(notes_snmt, 0),
+    # 
+    #   summary_snmt = analyzeSentiment(dataframe$summary)$SentimentQDAP,
+    #   summary_snmt = replace_na(summary_snmt, 0),
+    # ) %>%
     mutate(
       host_listings_count =  # 2023-4-4 fixed
         ifelse(is.na(dataframe$host_listings_count), median(dataframe$host_listings_count, na.rm = TRUE), dataframe$host_listings_count),
