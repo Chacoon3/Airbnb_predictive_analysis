@@ -1,8 +1,7 @@
 library(tidyverse)
-library(forecast)
 library(Metrics)
 library(text2vec)
-# library(SentimentAnalysis)
+library(SentimentAnalysis)
 library(caret)
 # library(tree)
 library(class)
@@ -11,13 +10,10 @@ library(readr)
 # library(naivebayes)
 # library(ROCR)
 # library(glmnet)
-set.seed(1)
 
 
-# function declarations------------------------
+# function declarations 
 
-
-# tools -----------------------------------
 # sample given number of rows from the dataframe
 get_df_sample <- function(dataframe, sample_size) {
   # sample given number of rows from the original dataframe
@@ -53,7 +49,9 @@ get_accuracy <- function(y_pred, y_valid) {
 }
 
 
-# data cleaning sub routines -------------------
+# data cleaning sub routines 
+
+
 dc_preprocess <- function(x_train, x_test, y_train) {
   # merge train and test
   data_all <- rbind(x_train, x_test) %>%
@@ -86,35 +84,32 @@ dc_sean <- function(dataframe) {
   
   
   # feature engineering 
-  # dataframe <- dataframe %>%
-  #   mutate(
-  #     access_senti = get_sentiment(dataframe$access),
-  #     access_senti = replace_na(access_senti, 0),
-  #     
-  #     desc_senti = get_sentiment(dataframe$description),
-  #     desc_senti = replace_na(desc_senti, 0),
-  #     
-  #     host_about_senti = get_sentiment(dataframe$host_about),
-  #     host_about_senti = replace_na(host_about_senti, 0),
-  #     
-  #     house_rules_senti = get_sentiment(dataframe$house_rules),
-  #     house_rules_senti = replace_na(house_rules_senti, 0),
-  #     
-  #     interaction_senti = get_sentiment(dataframe$interaction),
-  #     interaction_senti = replace_na(interaction_senti, 0),
-  #     
-  #     neighborhood_senti = get_sentiment(dataframe$neighborhood_overview),
-  #     neighborhood_senti = replace_na(neighborhood_senti, 0),
-  #     
-  #     notes_senti = get_sentiment(dataframe$notes),
-  #     notes_senti = replace_na(notes_senti, 0),
-  #     
-  #     summary_senti = get_sentiment(dataframe$summary),
-  #     summary_senti = replace_na(summary_senti, 0),
-  #   )
-  # 
-  
   dataframe <- dataframe %>%
+    mutate(
+      access_snmt = analyzeSentiment(dataframe$access)$SentimentQDAP,
+      access_snmt = replace_na(access_snmt, 0),
+
+      desc_snmt = analyzeSentiment(dataframe$description)$SentimentQDAP,
+      desc_snmt = replace_na(desc_snmt, 0),
+
+      host_about_snmt = analyzeSentiment(dataframe$host_about)$SentimentQDAP,
+      host_about_snmt = replace_na(host_about_snmt, 0),
+
+      house_rules_snmt = analyzeSentiment(dataframe$rules)$SentimentQDAP,
+      house_rules_snmt = replace_na(house_rules_snmt, 0),
+
+      interaction_snmt = analyzeSentiment(dataframe$interaction)$SentimentQDAP,
+      interaction_snmt = replace_na(interaction_snmt, 0),
+
+      neighborhood_snmt = analyzeSentiment(dataframe$neighborhood)$SentimentQDAP,
+      neighborhood_snmt = replace_na(neighborhood_snmt, 0),
+
+      notes_snmt = analyzeSentiment(dataframe$notes)$SentimentQDAP,
+      notes_snmt = replace_na(notes_snmt, 0),
+
+      summary_snmt = analyzeSentiment(dataframe$summary)$SentimentQDAP,
+      summary_snmt = replace_na(summary_snmt, 0),
+    ) %>%
     mutate(
       host_listings_count =  # 2023-4-4 fixed
         ifelse(is.na(dataframe$host_listings_count), median(dataframe$host_listings_count, na.rm = TRUE), dataframe$host_listings_count),
@@ -338,10 +333,12 @@ dc_quinn <- function(dataframe) {
 
 
 get_cleaned <- function(folder_dir) {
+  wd <- getwd()
   setwd(folder_dir)
   y_train <- read.csv('airbnb_train_y_2023.csv')
   x_train <- read.csv('airbnb_train_x_2023.csv')
   x_test <- read.csv('airbnb_test_x_2023.csv')
+  setwd(wd)
   
   row_train <- nrow(x_train)
   row_test <- nrow(x_test)
@@ -374,10 +371,12 @@ get_cleaned <- function(folder_dir) {
 
 
 export_cleaned <- function(folder_dir) {
+  wd <- getwd()
   setwd(folder_dir)
   x_train <- read.csv('airbnb_train_x_2023.csv')
   x_test <- read.csv('airbnb_test_x_2023.csv')
   y_train <- read.csv('airbnb_train_y_2023.csv')
+  setwd(wd)
   
   row_train <- nrow(x_train)
   row_test <- nrow(x_test)
@@ -427,7 +426,7 @@ export_cleaned <- function(folder_dir) {
 # nrow(x_te_cl) == nrow(x_test)
 
 
-# data cleaning sample code ---------------------------------
+# data cleaning sample code
 # data_all <- data_cleaning(r"(C:\Users\Chaconne\Documents\学业\UMD\Courses\758T Predictive\785T_Pred_Assignment\GA\Airbnb_predictive_analysis\Data)")
 
 
@@ -480,7 +479,7 @@ export_cleaned <- function(folder_dir) {
 # x_test$property_category
 # x_test$bed_category
 # length(x_test$accommodates)
-# the cleaned objects are: x_train, x_test, y_train_hbr, and y_train_prs ---------------
+# the cleaned objects are: x_train, x_test, y_train_hbr, and y_train_prs
 # build your models based on these four variables.
 # you can do any transformations on the features as long as you consider it to
 # be helpful to improve performance

@@ -1,19 +1,18 @@
 # This line references the data_cleaning.r script so that you can call functions that are written in that r file. 
 # Libraries called in the referenced file will automatically be included in this file.
-source('data_cleaning.r')
-library(xgboost)
+source('Library\\data_cleaning.r')
 
-# replace the string with the folder directory where you store the original data files.
+# replace the string with the directory of the project folder "Data"
 folder_dir = r"(C:\Users\Chaconne\Documents\学业\UMD\Courses\758T Predictive\785T_Pred_Assignment\GA\Airbnb_predictive_analysis\Data)"
 
-# This line needs only to be run once, which exports two csv files, one for training X's, the other for testing X's. Once the two files were created you only need to run the read.csv statements following this line.
+# This line needs only to be run once, which exports two csv files, one for the training X's, the other for the testing X's. Once the two files were created you only need to run the read.csv statements following this line.
 export_cleaned(folder_dir)
 
 
 # read
-x_train <- read.csv('x_train_clean.csv')
-x_test <- read.csv('x_test_clean.csv')
-y_train <- read.csv('airbnb_train_y_2023.csv')
+x_train <- read.csv('Data\\x_train_clean.csv')
+x_test <- read.csv('Data\\x_test_clean.csv')
+y_train <- read.csv('Data\\airbnb_train_y_2023.csv')
 hbr <- y_train$high_booking_rate
 prs <- y_train$perfect_rating_score
 
