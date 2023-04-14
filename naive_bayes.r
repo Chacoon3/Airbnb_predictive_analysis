@@ -1,6 +1,9 @@
 # This line references the data_cleaning.r script so that you can call functions that are written in that r file. 
 # Libraries called in the referenced file will automatically be included in this file.
 source('Library\\data_cleaning.r')
+source('Library\\utils.r')
+
+library(xgboost)
 
 # replace the string with the directory of the project folder "Data"
 # the original datasets MUST be placed under the Data folder for the following script to run correctly.
@@ -49,8 +52,32 @@ fe_naivebayes <- function(x) {
       host_neighbourhood,
       neighbourhood,
       require_guest_phone_verification,
-      requires_license
+      requires_license,
+        experiences_offered,
+        access,
+        description,
+        host_about,
+        host_name,
+        house_rules,
+        interaction,
+        name,
+        neighborhood_overview,
+        notes,
+        space,
+        street,
+        summary,
+        transit,
+        jurisdiction_names,
+        license,
+      state,
+      zipcode,
+      room_type,
+      smart_location,
+      property_type,
+      cancellation_policy
+      
     )) %>%
+
     mutate(
       accommodates = scale(accommodates),
       bed_type = as.factor(bed_type),
@@ -76,6 +103,34 @@ fe_naivebayes <- function(x) {
 }
 
 
+fe_random_forest <- function(x) {
+  attach(x)
+  res <- x %>%
+    select(
+      accommodates,
+      availability_30,
+      availability_365,
+      availability_60,
+      availability_90,
+      bathrooms,
+      bed_type,
+      bedrooms,
+      beds,
+      cleaning_fee,
+      extra_people,
+      guests_included,
+      host_acceptance_rate,
+      host_has_profile_pic,
+      host_identity_verified
+    ) %>%
+    mutate(
+      cancellation_policy = as.factor(cancellation_policy)
+    )
+  detach(x)
+  return(res)
+}
+
+
 train_naivebayes <- function(x, y) {
   md <- e1071::naiveBayes(x = x, y = y, laplace = 1)
   return(md)
@@ -88,14 +143,47 @@ x_va_nb <- fe_naivebayes(x_va)
 # get_shape(x_va_nb)
 # high booking rate
 md_hbr_nb <- train_naivebayes(x_tr_nb, hbr_tr)
-pred_hbr_nb <- predict(md_hbr_nb, newdata = x_va_nb)
-acc_hbr_nb <- get_accuracy(pred_hbr_nb, hbr_va)
+pred_hbr_nb <- predict(md_hbr_nb, newdata = x_va_nb, type = 'raw')
+acc_hbr_nb <- get_accuracy(ifelse(pred_hbr_nb[,2] > pred_hbr_nb[,1], 'YES', 'NO'), hbr_va)
 acc_hbr_nb
+
+hbr_va
+typeof(pred_hbr_nb)
+get_auc(pred_hbr_nb[,1], hbr_va)
+plot_roc(pred_hbr_nb[,1], hbr_va)
+
 # perfect rating score
 md_prs_nb <- train_naivebayes(x_tr_nb, prs_tr)
 pred_prs_nb <- predict(md_prs_nb, newdata = x_va_nb)
 acc_prs_nb <- get_accuracy(pred_prs_nb, prs_va)
 acc_prs_nb
+
+summary(x_tr_nb)
+
+x_tr_rf <- fe_random_forest(x_tr)
+x_va_rf <- fe_random_forest(x_va)
+md_dummy <- dummyVars(formula = ~., x_tr_rf, fullRank = TRUE)
+x_tr_rf_dummy <- predict(md_dummy, x_tr_rf)
+x_va_rf_dummy <- predict(md_dummy, x_va_rf)
+x_tr_rf_dummy %>% 
+  apply(MARGIN = 2, FUN = \(col) {sum(is.na(col))}) %>%
+  sum()
+
+prs_tr_dummy = ifelse(prs_tr == 'YES', 1, 0)
+
+
+md_prs_xgb <- xgboost(
+  data = as.matrix(x_tr_rf_dummy),
+  label = prs_tr_dummy,
+  nrounds = 1700
+)
+
+y_pred_prob_xgb <- predict(md_prs_xgb, newdata = x_va_rf_dummy)
+plot_roc(y_pred_prob_xgb, prs_va)
+get_auc(y_pred_prob_xgb, prs_va)
+
+
+md_prs_rf <- randomForest::randomForest(x = x_tr_rf_dummy, y = prs_tr_dummy)
 
 
 vec_laplace = 1:20
