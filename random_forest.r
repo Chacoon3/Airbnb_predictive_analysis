@@ -59,16 +59,21 @@ fe_random_forest <- function(x) {
       host_identity_verified,
       host_response_rate,
       host_response_time,
+      
       longitude,
-      latitude
+      latitude,
+      
+      price
     ) %>%
     mutate(
       cancellation_policy = as.factor(x$cancellation_policy),
-      host_response_time = as.factor(x$host_response_time)
+      host_response_time = as.factor(x$host_response_time),
+      
+      price = ifelse(price < 1, 1, price), # this is to prevent -inf
+      price = log(price)
     )
   return(res)
 }
-
 
 
 x_tr_rf <- fe_random_forest(x_tr)
@@ -91,7 +96,19 @@ plot_roc(y_pred_prob_xgb, prs_va)
 get_auc(y_pred_prob_xgb, prs_va)
 
 
-md_prs_rf <- randomForest::randomForest(x = x_tr_rf_dummy, y = prs_tr_dummy, maxnodes = 80)
-y_pred_rf <- predict(md_prs_rf, newdata = x_va_rf_dummy)
-plot_roc(y_pred_rf, prs_va)
-get_auc(y_pred_rf, prs_va)
+x_tr_rf_dummy %>%
+  apply(2, FUN = \(col) {sum(is.na(col))}) %>%
+  sum()
+
+md_prs_rf <- randomForest::randomForest(
+  x = x_tr_rf_dummy, 
+  y = as.factor(prs_tr), 
+  maxnodes = 80,
+  nodesize = 1,
+  mtry = 20
+)
+
+y_pred_rf <- predict(md_prs_rf, newdata = x_va_rf_dummy, 'prob')
+
+plot_roc(y_pred_rf[,2], prs_va)
+get_auc(y_pred_rf[,2], prs_va)
