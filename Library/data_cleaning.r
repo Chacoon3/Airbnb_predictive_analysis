@@ -146,7 +146,6 @@ dc_preprocess <- function(x_train, x_test, y_train) {
 
 
 dc_sean <- function(dataframe) {
-  print('data cleaning completed: 90% ...')
   
   # feature engineering 
   dataframe <- dataframe %>%
@@ -158,42 +157,32 @@ dc_sean <- function(dataframe) {
       interaction_snmt = get_sent_score(dataframe$interaction) %>% as.factor(),
       neighborhood_snmt = get_sent_score(dataframe$neighborhood) %>% as.factor(),
       notes_snmt = get_sent_score(dataframe$notes) %>% as.factor(),
-      summary_snmt = get_sent_score(dataframe$summary) %>% as.factor()
+      summary_snmt = get_sent_score(dataframe$summary) %>% as.factor(),
       
-      
-      # access_snmt = as.factor(dataframe$access_snmt),
-      # desc_snmt = as.factor(dataframe$desc_snmt),
-      # host_about_snmt = as.factor(dataframe$host_about_snmt),
-      # house_rules_snmt = as.factor(dataframe$house_rules_snmt),
-      # interaction_snmt = as.factor(dataframe$interaction_snmt),
-      # neighborhood_snmt = as.factor(dataframe$neighborhood_snmt),
-      # notes_snmt = as.factor(dataframe$notes_snmt),
-      # summary_snmt = as.factor(dataframe$summary_snmt)
+
+      first_review = dataframe$first_review %>% as.Date(), # added  2023-4-16
+      host_since = dataframe$host_since %>%
+        replace_na(replace = get_mode(dataframe$host_since)) %>% # added  2023-4-16
+        as.Date(),
     ) %>%
     mutate(
       host_listings_count =  # 2023-4-4 fixed
         ifelse(is.na(dataframe$host_listings_count), median(dataframe$host_listings_count, na.rm = TRUE), dataframe$host_listings_count),
-      host_since = # 2023-4-4 fixed
-        ifelse(is.na(dataframe$host_since), get_mode(dataframe$host_since), dataframe$host_since),
       host_total_listings_count = # 2023-4-4 fixed
         ifelse(is.na(dataframe$host_total_listings_count), 
                median(dataframe$host_total_listings_count, na.rm = TRUE), dataframe$host_total_listings_count),
       host_response_time = # fixed 2023-4-5
         ifelse(is.na(dataframe$host_response_time), 
                get_mode(dataframe$host_response_time), dataframe$host_response_time),
-      host_since = ifelse(
-        is.na(dataframe$host_since), median(dataframe$host_since, na.rm = TRUE), dataframe$host_since
-      ),
       city = as.factor(dataframe$city) # fixed 2023-4-6
     )
 
+  print('data cleaning completed: 90% ...')
   return(dataframe)
 }
 
 
 dc_xiaoze <- function(dataframe) {
-  print('data cleaning completed: 40% ...')
-  
   #edit NA columns
   #H
   median_bathrooms <- median(dataframe$bathrooms, na.rm = TRUE)
@@ -219,12 +208,12 @@ dc_xiaoze <- function(dataframe) {
   dataframe$cancellation_policy <- ifelse(dataframe$cancellation_policy %in% c("strict","super_strict_30"),"strict",dataframe$cancellation_policy)
   dataframe$cancellation_policy <- as.factor(dataframe$cancellation_policy)
   
+  print('data cleaning completed: 40% ...')
   return(dataframe)
 }
 
 
 dc_jingruo <- function(df) {
-  print('data cleaning completed: 25% ...')
   
   #remove items relevant to translation error
   df$amenities <- gsub("translation missing: en\\.hosting_amenity_\\d+", "",df$amenities) 
@@ -286,12 +275,12 @@ dc_jingruo <- function(df) {
   #delete original column
   df$df <- NULL
   
+  print('data cleaning completed: 25% ...')
   return(df)
 }
 
 
 dc_johannah <- function(dataframe) {
-  print('data cleaning completed: 55% ...')
   
   attach(dataframe)
   res <- dataframe %>%
@@ -352,13 +341,13 @@ dc_johannah <- function(dataframe) {
       has_house_rules = ifelse(is.na(house_rules), 0, 1)
     )
   detach(dataframe)
+  
+  print('data cleaning completed: 55% ...')
   return(res)
 }
 
 
 dc_quinn <- function(dataframe) {
-  print('data cleaning completed: 70% ...')
-  
   
   attach(dataframe)
   res <- dataframe %>%
@@ -378,6 +367,8 @@ dc_quinn <- function(dataframe) {
       zipcode=as.factor(zipcode),
     )
   detach(dataframe)
+  
+  print('data cleaning completed: 70% ...')
   return(res)
 }
 

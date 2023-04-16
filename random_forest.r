@@ -1,5 +1,5 @@
 # This line references the data_cleaning.r script so that you can call functions that are written in that r file. 
-# Libraries called in the referenced file will automatically be included in this file.
+# Libraries called in the referenced file will automatically be included in this file
 source('Library\\data_cleaning.r')
 source('Library\\utils.r')
 library(xgboost)
@@ -57,6 +57,7 @@ feature_engineering <- function(x) {
       beds,
       cleaning_fee,
       extra_people, # added 2023-4-16
+      first_review, # added 2023-4-16
       guests_included,
       host_acceptance_rate,
       host_has_profile_pic,
@@ -65,6 +66,7 @@ feature_engineering <- function(x) {
       host_listings_count, # added 2023-4-16
       host_response_rate,
       host_response_time,
+      host_since,
       Internet, # added 2023-4-16
       TV, # added 2023-4-16
       
@@ -94,26 +96,8 @@ feature_engineering <- function(x) {
 }
 
 
-fe_extra <- function(x, x_original) {
-  x <- x %>%
-    mutate(
-      # performance of logistic is bettern when using the extra people without
-      # converting it into factors
-      
-      
-      # convert review to date, appears helpful
-      first_review = x_original$first_review %>% as.Date(),
-
-      host_since = x_original$host_since %>%
-        replace_na(replace = get_mode(x_original$host_since)) %>%
-        as.Date(),
-    )
-  return(x)
-}
-
-
-x_tr_rf <- feature_engineering(x_tr) %>% fe_extra(x_original = x_tr)
-x_va_rf <- feature_engineering(x_va) %>% fe_extra(x_original = x_va)
+x_tr_rf <- feature_engineering(x_tr) 
+x_va_rf <- feature_engineering(x_va)
 md_dummy <- dummyVars(formula = ~., x_tr_rf, fullRank = TRUE)
 x_tr_rf_dummy <- predict(md_dummy, x_tr_rf)
 x_va_rf_dummy <- predict(md_dummy, x_va_rf)
@@ -158,6 +142,7 @@ md_hbr_rf_ranger <- ranger(x = x_tr_rf_dummy, y = hbr_tr,
 y_pred_prob_hbr_ranger <- 
   predict(md_hbr_rf_ranger, data = x_va_rf_dummy)$predictions[,2]
 plot_roc(y_pred_prob_hbr_ranger, hbr_va)
+get_auc(y_pred_prob_hbr_ranger, hbr_va)
 
 
 # logistic --------------------------
@@ -167,13 +152,17 @@ y_pred_prob_logit <- predict(md_logistic, newdata = data.frame(x_va_rf_dummy), t
 
 plot_roc(y_pred_prob_logit, hbr_va)
 
-t_diff <- x_tr_rf$host_since - x_tr_rf$first_review
-mean(t_diff)
-summary(x_tr_rf$first_review_lag)
-histogram(x_tr_rf$host_since - x_tr_rf$first_review)
+
 
 
 # analysis ------------------------
+
+t_diff <- x_tr_rf$host_since - x_tr_rf$first_review
+mean(t_diff)
+summary(x_tr_rf$host_since)
+histogram(x_tr_rf$host_since - x_tr_rf$first_review)
+
+
 names(x_tr)
 summary(x_tr$host_listings_count)
 
