@@ -1,22 +1,99 @@
 library(tidyverse)
 library(Metrics)
 library(text2vec)
-library(SentimentAnalysis)
 library(caret)
 library(class)
 library(readr)
 
+library(text2vec)
+library(tm)
+library(SnowballC)
+library(vip)
+library(textdata)
+library(tidytext)
+library(quanteda)
+
 # function declarations 
 
-# sample given number of rows from the dataframe
-get_df_sample <- function(dataframe, sample_size) {
-  # sample given number of rows from the original dataframe
-  indice = 1:nrow(dataframe)
-  sampled_indice <- sample(indice, sample_size, replace = FALSE)
-  sampled_df <- dataframe[sampled_indice, ]
+
+# sentiment analysis block 
+private_get_itoken <- function(text_col, tokenizer) {
+  if (is.null(text_col)) {
+    stop("column must not be null!")
+  }
   
-  return(sampled_df)
+  return(
+    itoken(
+      text_col, 
+      preprocessor = tolower,
+      tokenizer = tokenizer,
+      progressbar = FALSE
+    )
+  )
 }
+
+
+private_get_dfm <- function(text_col) {
+  
+  get_tokenizer <- function(v) {
+    v %>%
+      removeNumbers %>% #remove all numbers
+      removePunctuation %>% #remove all punctuation
+      removeWords(tm::stopwords(kind="en")) %>% #remove stopwords
+      stemDocument %>%
+      word_tokenizer 
+  }
+  
+  obj_itoken <- text_col %>%
+    # replace_na(replace = 'Missing')
+    private_get_itoken(tokenizer = get_tokenizer)
+  
+  obj_vectorizer <- obj_itoken %>%
+    create_vocabulary() %>%
+    prune_vocabulary(vocab_term_max = 500) %>%
+    vocab_vectorizer()
+  
+  dtm <- create_dtm(obj_itoken, obj_vectorizer)
+  dfm <- as.dfm(dtm)
+  return(dfm)
+}
+
+
+private_get_sent <- function(dfm) {
+  bing_sent <- get_sentiments("bing")
+  bing_negative <- bing_sent %>%
+    filter(sentiment == 'negative')
+  bing_positive <- bing_sent %>%
+    filter(sentiment == 'positive')
+  
+  dict_snmt <- dictionary(list(negative = bing_negative$word, positive = bing_positive$word))
+  count_of_snmt <- dfm_lookup(dfm, dict_snmt, valuetype = 'fixed')
+  snmt <- convert(count_of_snmt, to = "data.frame") %>%
+    mutate(sent_score = as.factor(
+      case_when(
+        positive > negative ~ 'Positive',
+        positive == negative ~ 'Neutral',
+        positive < negative ~ 'Negative'
+      )
+    )) %>%
+    select(
+      sent_score
+    )
+  
+  rm(bing_sent, bing_negative, bing_positive, dict_snmt, count_of_snmt)
+  
+  return(snmt)
+}
+
+
+get_sent_score <- function(text_col) {
+  res <- text_col %>%
+    private_get_dfm() %>%
+    private_get_sent()
+  
+  return(res$sent_score)
+}
+# end of sentiment analysis block
 
 
 # get the shape of a dataframe
@@ -66,44 +143,28 @@ dc_preprocess <- function(x_train, x_test, y_train) {
 
 
 dc_sean <- function(dataframe) {
-  # create columns indicating sentiment 
-  # named after the original columns
-  
-  # first, select text columns which contains contents that may contain sentiment.
-  # then map each of the text to a number that ranges from -1 to 1, indicating its sentiment
-  
-  # regular expression based approaches were not applied owing to a lack of target patterns.
-  
-  # local func: maps a column of text to a column of sentiment measure
-  
-  
   # feature engineering 
   dataframe <- dataframe %>%
-    # mutate(
-    #   access_snmt = analyzeSentiment(dataframe$access)$SentimentQDAP,
-    #   access_snmt = replace_na(access_snmt, 0),
-    # 
-    #   desc_snmt = analyzeSentiment(dataframe$description)$SentimentQDAP,
-    #   desc_snmt = replace_na(desc_snmt, 0),
-    # 
-    #   host_about_snmt = analyzeSentiment(dataframe$host_about)$SentimentQDAP,
-    #   host_about_snmt = replace_na(host_about_snmt, 0),
-    # 
-    #   house_rules_snmt = analyzeSentiment(dataframe$rules)$SentimentQDAP,
-    #   house_rules_snmt = replace_na(house_rules_snmt, 0),
-    # 
-    #   interaction_snmt = analyzeSentiment(dataframe$interaction)$SentimentQDAP,
-    #   interaction_snmt = replace_na(interaction_snmt, 0),
-    # 
-    #   neighborhood_snmt = analyzeSentiment(dataframe$neighborhood)$SentimentQDAP,
-    #   neighborhood_snmt = replace_na(neighborhood_snmt, 0),
-    # 
-    #   notes_snmt = analyzeSentiment(dataframe$notes)$SentimentQDAP,
-    #   notes_snmt = replace_na(notes_snmt, 0),
-    # 
-    #   summary_snmt = analyzeSentiment(dataframe$summary)$SentimentQDAP,
-    #   summary_snmt = replace_na(summary_snmt, 0),
-    # ) %>%
+    mutate(
+      access_snmt = get_sent_score(dataframe$access) %>% as.factor(),
+      desc_snmt = get_sent_score(dataframe$description) %>% as.factor(),
+      host_about_snmt = get_sent_score(dataframe$host_about) %>% as.factor(),
+      house_rules_snmt = get_sent_score(dataframe$house_rules) %>% as.factor(),
+      interaction_snmt = get_sent_score(dataframe$interaction) %>% as.factor(),
+      neighborhood_snmt = get_sent_score(dataframe$neighborhood) %>% as.factor(),
+      notes_snmt = get_sent_score(dataframe$notes) %>% as.factor(),
+      summary_snmt = get_sent_score(dataframe$summary) %>% as.factor()
+      
+      
+      # access_snmt = as.factor(dataframe$access_snmt),
+      # desc_snmt = as.factor(dataframe$desc_snmt),
+      # host_about_snmt = as.factor(dataframe$host_about_snmt),
+      # house_rules_snmt = as.factor(dataframe$house_rules_snmt),
+      # interaction_snmt = as.factor(dataframe$interaction_snmt),
+      # neighborhood_snmt = as.factor(dataframe$neighborhood_snmt),
+      # notes_snmt = as.factor(dataframe$notes_snmt),
+      # summary_snmt = as.factor(dataframe$summary_snmt)
+    ) %>%
     mutate(
       host_listings_count =  # 2023-4-4 fixed
         ifelse(is.na(dataframe$host_listings_count), median(dataframe$host_listings_count, na.rm = TRUE), dataframe$host_listings_count),
@@ -118,8 +179,8 @@ dc_sean <- function(dataframe) {
       host_since = ifelse(
         is.na(dataframe$host_since), median(dataframe$host_since, na.rm = TRUE), dataframe$host_since
       ),
-      city = as.factor(city) # fixed 2023-4-6
-    ) %>%
+      city = as.factor(dataframe$city) # fixed 2023-4-6
+    )
     # column dropping, some are dropped temporarily, some are permanently
     # select(
     #   !c(
@@ -328,7 +389,7 @@ dc_quinn <- function(dataframe) {
 }
 
 
-export_cleaned <- function(folder_dir) {
+get_cleaned <- function(folder_dir) {
   wd <- getwd()
   setwd(folder_dir)
   x_train <- read.csv('airbnb_train_x_2023.csv')
@@ -336,7 +397,7 @@ export_cleaned <- function(folder_dir) {
   y_train <- read.csv('airbnb_train_y_2023.csv')
   setwd(wd)
   
-
+  
   row_train <- nrow(x_train)
   row_test <- nrow(x_test)
   df <- dc_preprocess(x_train, x_test, y_train) %>%
@@ -357,14 +418,26 @@ export_cleaned <- function(folder_dir) {
     warning(c(
       "Missing values in output dataframe! Columns are:\n",
       paste(names(df)[which(colwise_na_count > 0)], collapse = ', ')
-      )
+    )
     )
   }
   
   x <- df %>%
     select(!c(high_booking_rate, perfect_rating_score))
-  x_train_clean <- x[1:row_train, ]
-  x_test_clean <- x[(row_train + 1): row_total, ]
+  
+  return(x)
+}
+
+
+export_cleaned <- function(folder_dir) {
+  x_all <- get_cleaned(folder_dir)
+  
+  wd <- getwd()
+  setwd(folder_dir)
+  y_train <- read.csv('airbnb_train_y_2023.csv')
+  row_train <- nrow(y_train)
+  x_train_clean <- x_all[1:row_train, ]
+  x_test_clean <- x_all[(row_train + 1): nrow(x_all), ]
   
   write.csv(x_train_clean, file = paste(
     folder_dir, 'x_train_clean.csv', sep = '\\'
@@ -373,7 +446,14 @@ export_cleaned <- function(folder_dir) {
   write.csv(x_test_clean, file = paste(
     folder_dir, 'x_test_clean.csv', sep = '\\'
   ))
+  
+  setwd(wd)
 }
+
+
+# garbage comments below just don't read'em 
+# kept just in case some day I need'em again
+
 
 # sample code for function call
 # t = r"(C:\Users\Chaconne\Documents\学业\UMD\Courses\758T Predictive\785T_Pred_Assignment\GA\Airbnb_predictive_analysis\Data)"
