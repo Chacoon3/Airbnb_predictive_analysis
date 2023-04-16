@@ -2,23 +2,26 @@
 # Libraries called in the referenced file will automatically be included in this file.
 source('Library\\data_cleaning.r')
 source('Library\\utils.r')
-
 library(xgboost)
+library(ranger)
 
 # replace the string with the directory of the project folder "Data"
 # the original datasets MUST be placed under the Data folder for the following script to run correctly.
-folder_dir = r"(C:\Users\Chaconne\Documents\学业\UMD\Courses\758T Predictive\785T_Pred_Assignment\GA\Airbnb_predictive_analysis\Data)"
+folder_dir = r"(C:\Users\Chaconne\Documents\学业\Projects\Airbnb_predictive_analysis\Data)"
 
 # This line needs only to be run once, which exports two csv files, one for the training X's, the other for the testing X's. Once the two files were created you only need to run the read.csv statements under this line.
-export_cleaned(folder_dir)
+# export_cleaned(folder_dir)
 
 
 # read
-x_train <- read.csv('Data\\x_train_clean.csv')
-x_test <- read.csv('Data\\x_test_clean.csv')
+# x_train <- read.csv('Data\\x_train_clean.csv')
+# x_test <- read.csv('Data\\x_test_clean.csv')
+x <- get_cleaned(folder_dir)
 y_train <- read.csv('Data\\airbnb_train_y_2023.csv')
-hbr <- y_train$high_booking_rate
-prs <- y_train$perfect_rating_score
+hbr <- y_train$high_booking_rate %>% as.factor()
+prs <- y_train$perfect_rating_score %>% as.factor()
+x_train <- x[1:nrow(y_train),]
+x_test <- x[(nrow(y_train) + 1): nrow(x),]
 
 
 # test
@@ -39,7 +42,8 @@ prs_va = prs[-sampled]
 
 
 # codes start here ----------------------------
-fe_random_forest <- function(x) {
+
+feature_engineering <- function(x) {
   res <- x %>%
     select(
       accommodates,
@@ -52,23 +56,37 @@ fe_random_forest <- function(x) {
       bedrooms,
       beds,
       cleaning_fee,
-      extra_people,
+      extra_people, # added 2023-4-16
       guests_included,
       host_acceptance_rate,
       host_has_profile_pic,
       host_identity_verified,
+      host_is_superhost, # added 2023-4-16
+      host_listings_count, # added 2023-4-16
       host_response_rate,
       host_response_time,
+      Internet, # added 2023-4-16
+      TV, # added 2023-4-16
       
       longitude,
       latitude,
       
-      price
+      property_category,
+      price,
+      
+      access_snmt,
+      desc_snmt,
+      host_about_snmt,
+      house_rules_snmt,
+      interaction_snmt,
+      neighborhood_snmt,
+      notes_snmt,
+      summary_snmt
     ) %>%
     mutate(
       cancellation_policy = as.factor(x$cancellation_policy),
       host_response_time = as.factor(x$host_response_time),
-      
+
       price = ifelse(price < 1, 1, price), # this is to prevent -inf
       price = log(price)
     )
@@ -76,17 +94,37 @@ fe_random_forest <- function(x) {
 }
 
 
-x_tr_rf <- fe_random_forest(x_tr)
-x_va_rf <- fe_random_forest(x_va)
+fe_extra <- function(x, x_original) {
+  x <- x %>%
+    mutate(
+      # performance of logistic is bettern when using the extra people without
+      # converting it into factors
+      
+      
+      # convert review to date, appears helpful
+      first_review = x_original$first_review %>% as.Date(),
+
+      host_since = x_original$host_since %>%
+        replace_na(replace = get_mode(x_original$host_since)) %>%
+        as.Date(),
+    )
+  return(x)
+}
+
+
+x_tr_rf <- feature_engineering(x_tr) %>% fe_extra(x_original = x_tr)
+x_va_rf <- feature_engineering(x_va) %>% fe_extra(x_original = x_va)
 md_dummy <- dummyVars(formula = ~., x_tr_rf, fullRank = TRUE)
 x_tr_rf_dummy <- predict(md_dummy, x_tr_rf)
 x_va_rf_dummy <- predict(md_dummy, x_va_rf)
 prs_tr_dummy = ifelse(prs_tr == 'YES', 1, 0)
+hbr_tr_dummy = ifelse(hbr_tr == 'TES', 1, 0)
 
 
+# xgb ----------------------------
 md_prs_xgb <- xgboost(
   data = as.matrix(x_tr_rf_dummy),
-  label = prs_tr_dummy,
+  label = prs_tr,
   nrounds = 1700
 )
 
@@ -96,13 +134,10 @@ plot_roc(y_pred_prob_xgb, prs_va)
 get_auc(y_pred_prob_xgb, prs_va)
 
 
-x_tr_rf_dummy %>%
-  apply(2, FUN = \(col) {sum(is.na(col))}) %>%
-  sum()
-
+# rf ----------------------------
 md_prs_rf <- randomForest::randomForest(
   x = x_tr_rf_dummy, 
-  y = as.factor(prs_tr), 
+  y = prs_tr, 
   maxnodes = 80,
   nodesize = 1,
   mtry = 20
@@ -112,3 +147,41 @@ y_pred_rf <- predict(md_prs_rf, newdata = x_va_rf_dummy, 'prob')
 
 plot_roc(y_pred_rf[,2], prs_va)
 get_auc(y_pred_rf[,2], prs_va)
+
+
+
+# ranger ---------------------------------
+md_hbr_rf_ranger <- ranger(x = x_tr_rf_dummy, y = hbr_tr,
+                 mtry=22, num.trees=500,
+                 importance="impurity",
+                 probability = TRUE)
+y_pred_prob_hbr_ranger <- 
+  predict(md_hbr_rf_ranger, data = x_va_rf_dummy)$predictions[,2]
+plot_roc(y_pred_prob_hbr_ranger, hbr_va)
+
+
+# logistic --------------------------
+md_logistic <- glm(data.frame(x_tr_rf_dummy, hbr_tr), formula = hbr_tr~., family = 'binomial')
+
+y_pred_prob_logit <- predict(md_logistic, newdata = data.frame(x_va_rf_dummy), type = 'response')
+
+plot_roc(y_pred_prob_logit, hbr_va)
+
+t_diff <- x_tr_rf$host_since - x_tr_rf$first_review
+mean(t_diff)
+summary(x_tr_rf$first_review_lag)
+histogram(x_tr_rf$host_since - x_tr_rf$first_review)
+
+
+# analysis ------------------------
+names(x_tr)
+summary(x_tr$host_listings_count)
+
+histogram(x_tr$host_listings_count, nint = max(x_tr$host_listings_count) / 8)
+boxplot(x_tr$host_listings_count)
+
+listing_freq <- x_tr %>% 
+  group_by(host_listings_count) %>%
+  summarise(total = n())
+
+barplot(height = listing_freq$total, names.arg = listing_freq$host_listings_count)

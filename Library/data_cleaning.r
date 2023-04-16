@@ -1,3 +1,5 @@
+source('Library\\utils.r')
+
 library(tidyverse)
 library(Metrics)
 library(text2vec)
@@ -124,6 +126,7 @@ get_accuracy <- function(y_pred, y_valid) {
 
 
 dc_preprocess <- function(x_train, x_test, y_train) {
+  print('data cleaning completed: 10% ...')
   # merge train and test
   data_all <- rbind(x_train, x_test) %>%
     data.frame(
@@ -143,6 +146,8 @@ dc_preprocess <- function(x_train, x_test, y_train) {
 
 
 dc_sean <- function(dataframe) {
+  print('data cleaning completed: 90% ...')
+  
   # feature engineering 
   dataframe <- dataframe %>%
     mutate(
@@ -169,45 +174,26 @@ dc_sean <- function(dataframe) {
       host_listings_count =  # 2023-4-4 fixed
         ifelse(is.na(dataframe$host_listings_count), median(dataframe$host_listings_count, na.rm = TRUE), dataframe$host_listings_count),
       host_since = # 2023-4-4 fixed
-        ifelse(is.na(dataframe$host_since), mode(dataframe$host_since), dataframe$host_since),
+        ifelse(is.na(dataframe$host_since), get_mode(dataframe$host_since), dataframe$host_since),
       host_total_listings_count = # 2023-4-4 fixed
         ifelse(is.na(dataframe$host_total_listings_count), 
                median(dataframe$host_total_listings_count, na.rm = TRUE), dataframe$host_total_listings_count),
       host_response_time = # fixed 2023-4-5
         ifelse(is.na(dataframe$host_response_time), 
-               mode(dataframe$host_response_time), dataframe$host_response_time),
+               get_mode(dataframe$host_response_time), dataframe$host_response_time),
       host_since = ifelse(
         is.na(dataframe$host_since), median(dataframe$host_since, na.rm = TRUE), dataframe$host_since
       ),
       city = as.factor(dataframe$city) # fixed 2023-4-6
     )
-    # column dropping, some are dropped temporarily, some are permanently
-    # select(
-    #   !c(
-    #   experiences_offered, # should drop cuz it is monotonous
-    #   access,
-    #   description,
-    #   host_about,
-    #   host_name,
-    #   house_rules,
-    #   interaction,
-    #   name,
-    #   neighborhood_overview,
-    #   notes,
-    #   space,
-    #   street,
-    #   summary,
-    #   transit,
-    #   jurisdiction_names,
-    #   license
-    # )
-    # )
-  
+
   return(dataframe)
 }
 
 
 dc_xiaoze <- function(dataframe) {
+  print('data cleaning completed: 40% ...')
+  
   #edit NA columns
   #H
   median_bathrooms <- median(dataframe$bathrooms, na.rm = TRUE)
@@ -238,6 +224,8 @@ dc_xiaoze <- function(dataframe) {
 
 
 dc_jingruo <- function(df) {
+  print('data cleaning completed: 25% ...')
+  
   #remove items relevant to translation error
   df$amenities <- gsub("translation missing: en\\.hosting_amenity_\\d+", "",df$amenities) 
   
@@ -303,6 +291,8 @@ dc_jingruo <- function(df) {
 
 
 dc_johannah <- function(dataframe) {
+  print('data cleaning completed: 55% ...')
+  
   attach(dataframe)
   res <- dataframe %>%
     mutate(
@@ -367,6 +357,9 @@ dc_johannah <- function(dataframe) {
 
 
 dc_quinn <- function(dataframe) {
+  print('data cleaning completed: 70% ...')
+  
+  
   attach(dataframe)
   res <- dataframe %>%
     mutate(
@@ -390,6 +383,8 @@ dc_quinn <- function(dataframe) {
 
 
 get_cleaned <- function(folder_dir) {
+  print('initializing data cleaning ...')
+  
   wd <- getwd()
   setwd(folder_dir)
   x_train <- read.csv('airbnb_train_x_2023.csv')
@@ -425,6 +420,8 @@ get_cleaned <- function(folder_dir) {
   x <- df %>%
     select(!c(high_booking_rate, perfect_rating_score))
   
+  
+  print('data cleaning completed!')
   return(x)
 }
 
@@ -448,6 +445,8 @@ export_cleaned <- function(folder_dir) {
   ))
   
   setwd(wd)
+  
+  print('export completed!')
 }
 
 
