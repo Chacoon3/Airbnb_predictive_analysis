@@ -176,20 +176,31 @@ md_hbr_rf_ranger <- ranger(x = x_tr_rf_dummy, y = prs_tr_rf,
                            mtry=22, num.trees=500,
                            importance="impurity",
                            probability = TRUE)
-y_pred_prob_hbr_ranger <- 
+y_pred_prob_prs_ranger <- 
   predict(md_hbr_rf_ranger, data = x_va_rf_dummy)$predictions[,2]
-plot_roc(y_pred_prob_hbr_ranger, prs_va)
-get_auc(y_pred_prob_hbr_ranger, prs_va)
+plot_roc(y_pred_prob_prs_ranger, prs_va)
+get_auc(y_pred_prob_prs_ranger, prs_va)
 # 0.8003  --> tpr ~ 0.4
+df_cutoff <- get_cutoff_dataframe(y_pred_prob_prs_ranger, prs_va, level = 
+              c('NO', 'YES'))
+
+plot_cutoff_dataframe(df_cutoff)
 
 
-# logistic --------------------------
+
+# logistic hbr --------------------------
 md_logistic <- glm(data.frame(x_tr_rf_dummy, hbr_tr), formula = hbr_tr~., family = 'binomial')
 
 y_pred_prob_logit <- predict(md_logistic, newdata = data.frame(x_va_rf_dummy), type = 'response')
-
 plot_roc(y_pred_prob_logit, hbr_va)
 
+
+
+# logistic prs --------------------------
+md_prs_logit <- glm(data.frame(x_tr_rf_dummy, prs_tr), formula = prs_tr~., family = 'binomial')
+
+y_pred_prob_prs_logit <- predict(md_prs_logit, newdata = data.frame(x_va_rf_dummy), type = 'response')
+plot_roc(y_pred_prob_prs_logit, prs_va)
 
 
 
@@ -198,6 +209,8 @@ plot_roc(y_pred_prob_logit, hbr_va)
 
 summary(x_tr$room_type)
 summary(x_tr_rf$price)
+boxplot(x_tr_rf$price)
+boxplot(x_tr_rf$monthly_price)
 summary(x_tr_rf$price_per_sqfeet)
 nrow(x_tr)
 nrow(x_tr_rf)
@@ -261,47 +274,6 @@ barplot(height = listing_freq$total, names.arg = listing_freq$host_listings_coun
 
 
 # draft -------------------------------
-
-find_cutoff <- 
-  function(y_pred_prob, y_valid_factor, level, max_fpr = 0.085, step = 0.01) {
-  if (length(y_pred_prob) != length(y_valid_factor)) {
-    stop('prediction and validation have different lengths.')
-  }
-    
-  p = level[2]
-  n = level[1]
-  
-  get_fpr <- function(y_pred, y_valid) {
-    count_fp = sum((y_valid == n) & (y_pred == p))
-    count_tn = sum(y_valid == n)
-    return(count_fp / count_tn)
-  }
-  
-  
-  get_tpr <- function(y_pred, y_valid) {
-    count_tp = sum((y_valid == p) & (y_valid == y_pred))
-    count_p = sum(y_valid == p)
-    return(count_tp / count_p)
-  }
-  
-  
-  tpr_prev = 0
-  fpr_prev = 0
-  cutoff_prev = 0
-  tpr = 0
-  fpr = 0
-  cut_off = 1
-  while (fpr < max_fpr && cut_off >= 0 ) {
-    cut_off = cut_off - step
-    print(cut_off)
-    
-    y_pred = ifelse(y_pred_prob >= cut_off, level[2], level[1])
-    
-    tpr = get_tpr(y_pred, y_valid_factor)
-    fpr = get_fpr(y_pred, y_valid_factor)
-  }
-  return(cut_off)
-  }
 
 
 # should refine the function by returning the cutoff that maximizes the tpr
