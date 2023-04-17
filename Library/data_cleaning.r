@@ -169,14 +169,22 @@ dc_sean <- function(dataframe) {
     ) %>%
     mutate(
       host_listings_count =  # 2023-4-4 fixed
-        ifelse(is.na(dataframe$host_listings_count), median(dataframe$host_listings_count, na.rm = TRUE), dataframe$host_listings_count),
+        ifelse(is.na(dataframe$host_listings_count),
+               median(dataframe$host_listings_count, na.rm = TRUE),
+               dataframe$host_listings_count),
       host_total_listings_count = # 2023-4-4 fixed
         ifelse(is.na(dataframe$host_total_listings_count), 
-               median(dataframe$host_total_listings_count, na.rm = TRUE), dataframe$host_total_listings_count),
+               median(dataframe$host_total_listings_count, na.rm = TRUE),
+               dataframe$host_total_listings_count),
       host_response_time = # fixed 2023-4-5
         ifelse(is.na(dataframe$host_response_time), 
-               get_mode(dataframe$host_response_time), dataframe$host_response_time),
-      city = as.factor(dataframe$city) # fixed 2023-4-6
+               get_mode(dataframe$host_response_time), 
+               dataframe$host_response_time),
+      city = as.factor(dataframe$city), # fixed 2023-4-6,
+      
+      license = dataframe$license %>%
+        replace_na("Missing") %>%
+        as.factor() # fixed 2023-4-16
     )
 
   print('data cleaning completed: 90% ...')
