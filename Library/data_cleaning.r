@@ -224,48 +224,25 @@ dc_xiaoze <- function(dataframe) {
 
 
 dc_jingruo <- function(df) {
-  
   #remove items relevant to translation error
   df$amenities <- gsub("translation missing: en\\.hosting_amenity_\\d+", "",df$amenities) 
+  df$amenities <-tolower(df$amenities)
+  rep_str = c("smart tv"= "tv","cable tv" = "tv",
+              "wifi" = "internet", "internets" = "internet", "wireless internet" = "internet",
+              "bathtub with shower chair"="bathtub","hot tub"="bathtub","jetted tub"="bathtub","private hot tub"="bathtub","shared hot tub"="bathtub", "soaking tub"="bathtub",
+              "travel crib"="crib",
+              "doorman" = "doorperson", "doorman entry" ="doorperson")
+  df$amenities <- str_replace_all(df$amenities,rep_str )
+  # fixed on 4-16: choose dummy variables based on feature importance
+  important_amenities <-c("self check-in", "hair dryer", "hangers", "washer", 
+                          "shampoo", "kitchen", "first aid kit", "24-hour check-in", 
+                          "lock on bedroom door", "indoor fireplace", "`air conditioning", 
+                          "free parking on premises", "fire extinguisher", "tv",
+                          "carbon monoxide detector")
   
-  # get the name and frequency of each item
-  item_counts <- table(str_extract_all(df$amenities, regex("[[:alnum:] ()'’‘-]+", ignore_case = T)) %>% unlist())
-  #transform the table into a dataframe
-  item_df <- data.frame(
-    items = names(item_counts),
-    frequency = as.numeric(item_counts),
-    stringsAsFactors = FALSE
-  )
-  item_df
-  #merge duplicated items 
-  # Cable TV; Smart TV; TV --> TV
-  # Doorman; Doorperson; Doorman Entry --> Doorperson
-  # WiFi, internets, Wireless Internet
-  # travel crib, crib -->crib
-  # Hot tub, bath tub --> bath tub
-  #make new rows sum up the frequency of duplicates
-  new_row <- data.frame(items=c("TV","Internet"), frequency = c(sum(item_df[item_df$item %in% c("TV", "Smart TV","Cable TV"), "frequency"]),sum(item_df[item_df$item %in% c("Wifi", "Internets", "Wireless Internet"), "frequency"])))
-  #drop the previous rows
-  item_df <-item_df[-which(item_df$items %in% c("TV", "Smart TV","Cable TV", "Wifi", "Internet", "Wireless Internet")),]
-  #add new rows
-  item_df <- rbind(item_df, new_row)
-  item_df <- item_df[order(item_df$frequency, decreasing = TRUE),] #sort the dataframe by frequency in descending order
-  item_df
-  
-  #unify the names of TV and internet
-  df$amenities <- gsub("Smart TV|Cable TV","TV",df$amenities)
-  df$amenities <-gsub("Wifi|Wireless Internet","Internet",df$amenities)
-  
-  #Subset the top 10 items and build corresponding dummy variables
-  subset_items <- item_df$items[1:10] 
-  for (i in subset_items){
+  for (i in important_amenities){
     df[,i] <- str_detect(df$amenities, i)
-    is.na(df[,i]) <- 0 
   }
-  
-  #count how many items are included in each row
-  df$amentities_number <- sapply(str_split(df$amenities, pattern = ","),length)
-  
   #drop the original amemtities row
   df$amenities <- NULL
   
@@ -283,9 +260,8 @@ dc_jingruo <- function(df) {
     df[,i] <- str_detect(df$host_verifications, i)
   }
   #delete original column
-  df$df <- NULL
+  df$verifications <- NULL
   
-  print('data cleaning completed: 25% ...')
   return(df)
 }
 
@@ -301,7 +277,7 @@ dc_johannah <- function(dataframe) {
       market = ifelse(is.na(market), 'Missing', market),
       market = as.factor(market),
       monthly_price = parse_number(monthly_price, na = c("", "NA")),
-      monthly_price = ifelse(is.na(monthly_price),0,monthly_price), 
+      monthly_price = ifelse(is.na(monthly_price),0,monthly_price),  #4-16: replacing value change from mean to 0
       neighbourhood=ifelse(is.na(neighbourhood), "Missing", neighbourhood),
       neighbourhood=as.factor(neighbourhood),
       is_note=ifelse(is.na(notes), 0,1),
@@ -370,9 +346,9 @@ dc_quinn <- function(dataframe) {
       smart_location=as.factor(smart_location), #category variable - may be automatically generated
       state=as.factor(state), #category variable
       #continuous variables replaced with mean, discrete with median
-      security_deposit = ifelse(is.na(security_deposit), mean(security_deposit, na.rm = TRUE), security_deposit), #replace na's with mean
+      security_deposit = ifelse(is.na(security_deposit), 0, security_deposit), #replace na's with mean # 4-16: #4-16: replacing value change from mean to 0
       square_feet = ifelse(is.na(square_feet), median(square_feet, na.rm = TRUE), square_feet), #replace na's with median
-      weekly_price = ifelse(is.na(weekly_price), mean(weekly_price, na.rm = TRUE), weekly_price), #replace na's with mean
+      weekly_price = ifelse(is.na(weekly_price), 0, weekly_price), #replace na's with m0
       zipcode=ifelse(is.na(zipcode),"MISSING",zipcode),
       zipcode=as.factor(zipcode),
     )
@@ -382,6 +358,11 @@ dc_quinn <- function(dataframe) {
   return(res)
 }
 
+dc_col57_69 <- function(df){
+  df %>%
+    mutate(monthly_per_person = monthly_price/accommodates,
+           weekly_per_person = weekly_price/accommodates)
+}
 
 get_cleaned <- function(folder_dir) {
   print('initializing data cleaning ...')
@@ -401,7 +382,8 @@ get_cleaned <- function(folder_dir) {
     dc_xiaoze() %>%
     dc_johannah() %>%
     dc_quinn() %>%
-    dc_sean()
+    dc_sean() %>%
+    dc_col57_69()
   
   row_total <- nrow(df)
   assert_row_count = row_total == row_train + row_test
