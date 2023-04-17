@@ -1,8 +1,5 @@
-source('Library\\utils.r')
-
 library(tidyverse)
 library(Metrics)
-library(text2vec)
 library(caret)
 library(class)
 library(readr)
@@ -16,6 +13,11 @@ library(tidytext)
 library(quanteda)
 
 # function declarations 
+
+get_mode <- function(v) {
+  uniqv <- unique(v)
+  uniqv[which.max(tabulate(match(v, uniqv)))]
+}
 
 
 # sentiment analysis block 
