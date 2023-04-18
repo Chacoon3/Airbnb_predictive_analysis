@@ -12,6 +12,7 @@ plot_roc <- function(pred_y_prob, valid_y_factor)  {
   abline(v = 0.1)
 }
 
+
 # returns the auc
 get_auc <- function(pred_y_prob, valid_y_factor) {
   pred_obj = prediction(pred_y_prob, valid_y_factor)
@@ -27,7 +28,7 @@ get_mode <- function(v) {
 
 
 get_cutoff_dataframe <- 
-  function(y_pred_prob, y_valid_factor, level, max_fpr = 0.085, step = 0.005) {
+  function(y_pred_prob, y_valid_factor, level, max_fpr = 0.1, step = 0.005) {
     
     if (length(y_pred_prob) != length(y_valid_factor)) {
       stop('prediction and validation have different lengths.')
@@ -91,6 +92,7 @@ plot_cutoff_dataframe <- function(df) {
     ggplot(data = df, aes(x = cutoff, y = metric, color = type)) +
       ggtitle('cutoff over metrics') +
       geom_line() +
-      geom_vline(xintercept = df$cutoff_bound)
+      geom_vline(xintercept = df$cutoff_bound) +
+      ylim(0, 1)
   )
 }
