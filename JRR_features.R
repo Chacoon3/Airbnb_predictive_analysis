@@ -2,9 +2,15 @@
 #install.packages('tidyverse')
 library(tidyverse)
 options(scipen=999)
-source('/cloud/project/Library/data_cleaning.r')
-get_cleaned('/cloud/project/Data')
-install.packages('quanteda')
+library(readxl)
+#source('/cloud/project/Library/data_cleaning.r')
+#get_cleaned('/cloud/project/Data')
+#install.packages('quanteda')
+
+#city_destinations <- read_xlsx("city-destinations.xlsx")
+#summary(city_destinations)
+
+
 data1 <-read_csv('x_train_clean.csv')
 summary(data1)
 data2<-data1 %>%
@@ -29,13 +35,34 @@ data2<-data1 %>%
     host_response=as.factor(host_response)
   )%>%
   select(-host_verifications)
-summary(data2)
-airbnb<-data2%>%
+
+summary(data3)
+data3<-data2%>%
   mutate(time_since_first_review= difftime('2023-01-01',first_review, unit='days'),
          time_since_first_review=as.duration(time_since_first_review)/dyears(x=1),
          time_host_since= difftime('2023-01-01',host_since, unit='days'),
          time_host_since=as.duration(time_host_since)/dyears(x=1),
          host_local= ifelse(as.character(host_neighbourhood)==as.character(neighbourhood), TRUE, FALSE)
          )
+airbnb <- data3 %>%
+  mutate(expensive_hotels = ifelse(city %in% c('Miami',
+                                             'New York',
+                                             'Las Vegas',
+                                             'San Francisco',
+                                             'Chicago'), 1,0),
+         top_destination = ifelse(city %in% c('Paris',
+                                             'Beijing',
+                                             'Orlando',
+                                             'Shanghai',
+                                             'Las Vegas',
+                                             'New York',
+                                             'Tokyo', 
+                                             'Mexico City', 
+                                             'London',
+                                             'Guangzhou'),1,0)
+  )
+         
+         
+         
 
 summary(airbnb)
