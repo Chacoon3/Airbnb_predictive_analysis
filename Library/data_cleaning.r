@@ -358,11 +358,13 @@ dc_quinn <- function(dataframe) {
   return(res)
 }
 
+
 dc_col57_69 <- function(df){
   df %>%
     mutate(monthly_per_person = monthly_price/accommodates,
            weekly_per_person = weekly_price/accommodates)
 }
+
 
 get_cleaned <- function(folder_dir) {
   print('initializing data cleaning ...')

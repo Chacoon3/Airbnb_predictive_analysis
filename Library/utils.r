@@ -27,8 +27,9 @@ get_mode <- function(v) {
 }
 
 
+# returns a data frame that provides insights regarding cutoff selection
 get_cutoff_dataframe <- 
-  function(y_pred_prob, y_valid_factor, level, max_fpr = 0.1, step = 0.005) {
+  function(y_pred_prob, y_valid_factor, level, max_fpr = 0.1, step = 0.001) {
     
     if (length(y_pred_prob) != length(y_valid_factor)) {
       stop('prediction and validation have different lengths.')
@@ -58,6 +59,7 @@ get_cutoff_dataframe <-
     vec_tpr = c(tpr)
     vec_fpr = c(fpr)
     vec_cutoff = c(cutoff)
+    best_valid_tpr = 0
     while (cutoff >= 0 ) {
       cutoff = cutoff - step
       # print(cutoff)
@@ -72,6 +74,7 @@ get_cutoff_dataframe <-
       
       if (fpr > max_fpr && cutoff_bound > 1) {
         cutoff_bound = cutoff
+        best_valid_tpr = tpr
       }
     }
     
@@ -79,6 +82,8 @@ get_cutoff_dataframe <-
     df <- data.frame(
       cutoff = c(vec_cutoff, vec_cutoff),
       cutoff_bound = rep(cutoff_bound, length(vec_cutoff) * 2),
+      fpr_cons = rep(max_fpr, length(vec_cutoff) * 2),
+      tpr_best = rep(best_valid_tpr, length(vec_cutoff) * 2),
       metric = c(vec_tpr, vec_fpr),
       type = c(rep('tpr', length(vec_tpr)), rep('fpr', length(vec_fpr)))
     )
@@ -87,12 +92,28 @@ get_cutoff_dataframe <-
   }
 
 
+# plota a cutoff data frame, i.e. cutoff over trp and fpr
 plot_cutoff_dataframe <- function(df) {
   return(
     ggplot(data = df, aes(x = cutoff, y = metric, color = type)) +
-      ggtitle('cutoff over metrics') +
+      ggtitle( 
+        paste(
+          'cutoff over metrics -- fpr max = ',
+          df$fpr_cons[1]
+        )
+      ) +
       geom_line() +
       geom_vline(xintercept = df$cutoff_bound) +
+      labs(x = paste(
+        'cutoff boundary: ', 
+        base::round(df$cutoff_bound[1], 4),
+        '   best valid tpr: ',
+        base::round(df$tpr_best, 4)
+        ),
+      ) +
       ylim(0, 1)
   )
 }
+
+
+
