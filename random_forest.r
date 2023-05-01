@@ -11,9 +11,6 @@ options(scipen = 999)
 # the original datasets MUST be placed under the Data folder for the following script to run correctly.
 folder_dir = r"(C:\Users\Chaconne\Documents\学业\Projects\Airbnb_predictive_analysis\Data)"
 
-# This line needs only to be run once, which exports two csv files, one for the training X's, the other for the testing X's. Once the two files were created you only need to run the read.csv statements under this line.
-# export_cleaned(folder_dir)
-
 
 feature_engineering_full_set <- function(df) {
   df <- df %>%
@@ -51,7 +48,8 @@ feature_engineering_full_set <- function(df) {
     ) %>%
     ungroup() %>%
     mutate(
-      neighbourhood = ifelse(count_neighbor < 350, 'Other', neighbourhood)
+      neighbourhood = ifelse(count_neighbor < 350, 'Other', neighbourhood) %>%
+        as.factor()
     ) %>%
     select(!count_neighbor)
   
@@ -59,72 +57,8 @@ feature_engineering_full_set <- function(df) {
 }
 
 
-# read
-# x_train <- read.csv('Data\\x_train_clean.csv')
-# x_test <- read.csv('Data\\x_test_clean.csv')
-x_full_set <- get_cleaned(folder_dir)
-y_train <- read.csv('Data\\airbnb_train_y_2023.csv')
-
-x <- feature_engineering_full_set(x_full_set)
-
-hbr <- y_train$high_booking_rate %>% as.factor()
-prs <- y_train$perfect_rating_score %>% as.factor()
-x_train <- x[1:nrow(y_train),]
-x_test <- x[(nrow(y_train) + 1): nrow(x),]
-
-
-# test
-nrow(x_train) == nrow(y_train)
-nrow(x_test) == 12205
-(length(hbr) == length(prs)) && (length(hbr) == nrow(y_train))
-
-
-#view -----------------
-summary(x_train$host_neighbourhood)
-tar_fac <- y_train$perfect_rating_score %>% as.factor()
-
-obj_test <- x_train %>%
-  cbind(tar_fac) %>% 
-  group_by(neighbourhood) %>%
-  mutate(
-    inst_count = n()
-  ) %>%
-  ungroup() %>%
-  filter(tar_fac == 'YES') %>%
-  group_by(neighbourhood) %>%
-  mutate(
-    p_count = n(),
-    p_rate = p_count / inst_count
-  ) %>%
-  select(neighbourhood, inst_count, p_rate) %>%
-  arrange(inst_count) %>%
-  distinct()
-
-
-ggplot(data = obj_test, aes(x = neighbourhood, y = inst_count)) +
-  geom_bar(stat = "identity")
-
-boxplot(obj_test$inst_count)
-summary(obj_test$inst_count)
-hist(x$monthly_price)
-summary(x$price)
-
-
-# train-validation split -------------------------
-sampled = sample(1:nrow(x_train), 0.85 * nrow(x_train))
-x_tr = x_train[sampled, ]
-x_va = x_train[-sampled, ]
-hbr_tr = hbr[sampled]
-hbr_va = hbr[-sampled]
-prs_tr = prs[sampled]
-prs_va = prs[-sampled]
-
-
-# summary(x$host_neighbourhood)
-# codes start here ----------------------------
-
 feature_engineering <- function(x) {
-
+  
   res <- x %>%
     select(
       accommodates,
@@ -158,15 +92,10 @@ feature_engineering <- function(x) {
       market,
       neighbourhood,
       host_same_neighbor,
-      
-      # added 2023-4-16
-
-
-
-
       instant_bookable,
-      # Internet,
       is_business_travel_ready,
+      require_guest_phone_verification,
+      require_guest_profile_picture,
       # TV,
       room_type,
       
@@ -192,12 +121,12 @@ feature_engineering <- function(x) {
       
       # removed 2023-4-17
       # license,
-
+      
       
       
       property_category,
       price,
-
+      
       
       access_snmt,
       desc_snmt,
@@ -213,10 +142,10 @@ feature_engineering <- function(x) {
         as.factor(),
       
       host_response_time = as.factor(x$host_response_time),
-
+      
       price = ifelse(price < 1, mean(price), price) %>% # this is to prevent -inf
-              log(), 
-
+        log(), 
+      
       price_per_sqfeet = x$price / 
         ifelse(x$square_feet == 0, median(x$square_feet), x$square_feet),
       
@@ -228,23 +157,155 @@ feature_engineering <- function(x) {
         ifelse(x$square_feet == 0, median(x$square_feet), x$square_feet)
       
     )
+  
   return(res)
 }
 
 
-x_tr_rf <- feature_engineering(x_tr) 
-x_va_rf <- feature_engineering(x_va)
-x_te_rf <- feature_engineering(x_test)
-hbr_tr_rf <- hbr_tr
-prs_tr_rf <- prs_tr
-md_dummy <- dummyVars(formula = ~., x_tr_rf, fullRank = TRUE)
-x_tr_rf_dummy <- predict(md_dummy, x_tr_rf)
-x_va_rf_dummy <- predict(md_dummy, x_va_rf)
-x_te_rf_dummy <- predict(md_dummy, x_te_rf)
-prs_tr_dummy = ifelse(prs_tr_rf == 'YES', 1, 0)
-hbr_tr_dummy = ifelse(hbr_tr_rf == 'TES', 1, 0)
-prs_va_dummy = ifelse(prs_va == 'YES', 1, 0)
-hbr_va_dummy = ifelse(hbr_va == 'TES', 1, 0)
+
+
+
+# read
+x_full_set <- get_cleaned(folder_dir)
+
+y_train <- read.csv('Data\\airbnb_train_y_2023.csv')
+
+x <- feature_engineering_full_set(x_full_set) %>%
+  feature_engineering()
+
+
+hbr <- y_train$high_booking_rate %>% as.factor()
+hbr <- ifelse(hbr == 'YES', 1, 0)
+prs <- y_train$perfect_rating_score %>% as.factor()
+prs <- ifelse(prs == 'YES', 1, 0)
+x_train <- x[1:nrow(y_train),]
+x_test <- x[(nrow(y_train) + 1): nrow(x),]
+
+md_dummy <- dummyVars(formula = ~., x, fullRank = TRUE)
+x_tr_dummy <- predict(md_dummy, x_train)
+x_te_dummy <- predict(md_dummy, x_test)
+
+
+# test
+nrow(x_train) == nrow(y_train)
+nrow(x_test) == 12205
+(length(hbr) == length(prs)) && (length(hbr) == nrow(y_train))
+
+
+#view -----------------
+x_view <- x_full_set[1:nrow(y_train),]
+sop <- x_view$security_deposit / ifelse(x_view$price == 0, 1, x_view$price)
+summary(sop) # useful
+boxplot(sop)
+summary(x_view$security_deposit) # useful
+summary(x_view$requires_license)
+tar_fac <- y_train$perfect_rating_score %>% as.factor()
+
+obj_test <- x_view %>%
+  mutate(
+    has_deposit = ifelse(security_deposit > 0, 1, 0) %>% as.factor,
+  ) %>%
+  cbind(tar_fac) %>% 
+  group_by(has_deposit) %>%
+  mutate(
+    inst_count = n()
+  ) %>%
+  ungroup() %>%
+  filter(tar_fac == 'YES') %>%
+  group_by(has_deposit) %>%
+  mutate(
+    p_count = n(),
+    p_rate = p_count / inst_count
+  ) %>%
+  select(has_deposit, inst_count, p_rate) %>%
+  arrange(inst_count) %>%
+  distinct()
+
+
+ggplot(data = obj_test, aes(x = neighbourhood, y = inst_count)) +
+  geom_bar(stat = "identity")
+
+boxplot(obj_test$inst_count)
+summary(obj_test$inst_count)
+hist(x$monthly_price)
+summary(x$price)
+
+
+# train-validation split -------------------------
+sampled = sample(1:nrow(x_train), 0.8 * nrow(x_train))
+x_tr_rf = x_tr_dummy[sampled, ]
+x_va_rf = x_tr_dummy[-sampled, ]
+hbr_tr = hbr[sampled]
+hbr_va = hbr[-sampled]
+prs_tr = prs[sampled]
+prs_va = prs[-sampled]
+
+
+# summary(x$host_neighbourhood)
+# codes start here ----------------------------
+
+
+# learning curve using ranger -----------------
+
+# create held-out data (holding 10% out)
+
+folds <- cut(
+    1:nrow(x_train) %>% sample(size = nrow(x_train)), 
+    breaks = tr_fold_max + 1, 
+    labels = FALSE
+  )
+# summary(folds)
+x_heldout <- x_train[which(folds == tr_fold_max + 1, arr.ind = TRUE),]
+prs_heldout <- prs[which(folds == tr_fold_max + 1, arr.ind = TRUE)]
+# nrow(x_heldout) == length(prs_heldout)
+
+vec_sample_size = rep(0, tr_fold_max)
+vec_acc_heldout = rep(0, tr_fold_max)
+for (ind in 1:tr_fold_max) {
+  
+  indice_tr = which(folds <= ind, arr.ind = TRUE)
+  sample_size = length(indice_tr)
+  vec_sample_size[ind] = sample_size
+  
+  x_tr = x_train[indice_tr, ]
+  prs_tr = prs[indice_tr]
+  # x_va = x_use[-sampled, ]
+  # hbr_tr = hbr[sampled]
+  # hbr_va = hbr[-sampled]
+  # prs_va = prs_use[-sampled]
+  
+  
+  md_ranger <- ranger(x = x_tr, y = prs_tr,
+                             mtry=26, 
+                             num.trees=800,
+                             importance="impurity",
+                             probability = TRUE)
+  
+  # validation set
+  # y_pred_prob <- 
+  #   predict(md_hbr_rf_ranger, data = x_va)$predictions[,2]
+  # y_pred = ifelse(y_pred_prob >= 0.5, 1, 0)
+  # acc = get_accuracy(y_pred, prs_va)
+  # vec_acc[ind] = acc
+  
+  
+  # heldout set
+  y_pred_prob <- 
+    predict(md_ranger, data = x_heldout)$predictions[,2]
+  y_pred = ifelse(y_pred_prob >= 0.5, 1, 0)
+  acc_heldout = get_accuracy(y_pred, prs_heldout)
+  vec_acc_heldout[ind] = acc_heldout
+}
+
+
+ggplot(
+  data = data.frame(
+    sample_size = vec_sample_size, 
+    accuracy = vec_acc_heldout
+  ),
+  aes(x = sample_size, y = accuracy)
+) + geom_line()
+
 
 
 # xgb prs ----------------------------
@@ -296,17 +357,17 @@ get_auc(y_pred_prob_hbr_ranger, hbr_va)
 
 # ranger prs ----------------------------
 # optimal num tree = 800, mtry = 26
-md_hbr_rf_ranger <- ranger(x = x_tr_rf_dummy, y = prs_tr_rf,
+md_prs_ranger <- ranger(x = x_tr_rf, y = prs_tr,
                            mtry=26, 
                            num.trees=800,
                            importance="impurity",
                            probability = TRUE)
 y_pred_prob_prs_ranger <- 
-  predict(md_hbr_rf_ranger, data = x_va_rf_dummy)$predictions[,2]
+  predict(md_prs_ranger, data = x_va_rf)$predictions[,2]
 plot_roc(y_pred_prob_prs_ranger, prs_va)
 get_auc(y_pred_prob_prs_ranger, prs_va)
-# last 0.7924
-# highest 0.804
+# last 0.808
+# highest 0.808
 
 df_cutoff <- 
   get_cutoff_dataframe(y_pred_prob_prs_ranger, prs_va, 

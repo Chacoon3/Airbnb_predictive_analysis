@@ -142,6 +142,11 @@ get_accuracy <- function(y_pred, y_valid) {
   if (length(y_pred) != length(y_valid)) {
     stop("error: prediction and valid column has different numbers of rows!")
   }
+  
+  if (!any(y_pred == y_valid)) {
+    warning("warning: No correct prediction at all! Check input data!")
+  }
+  
   return(
     sum(y_pred == y_valid) / length(y_pred)
   )
