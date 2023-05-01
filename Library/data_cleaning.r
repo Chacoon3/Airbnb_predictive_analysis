@@ -63,6 +63,30 @@ private_get_dfm <- function(text_col) {
 }
 
 
+private_get_dfm_2 <- function(df) {
+  
+  get_tokenizer <- function(v) {
+    v %>%
+      removeNumbers %>% #remove all numbers
+      removePunctuation %>% #remove all punctuation
+      removeWords(tm::stopwords(kind="en")) %>% #remove stopwords
+      stemDocument %>%
+      word_tokenizer 
+  }
+  
+
+  
+  obj_vectorizer <- obj_itoken %>%
+    create_vocabulary() %>%
+    prune_vocabulary(vocab_term_max = 300, term_count_min = 5) %>%
+    vocab_vectorizer()
+  
+  dtm <- create_dtm(obj_itoken, obj_vectorizer)
+  dfm <- as.dfm(dtm)
+  return(dfm)
+}
+
+
 private_get_sent <- function(dfm) {
   bing_sent <- get_sentiments("bing")
   bing_negative <- bing_sent %>%

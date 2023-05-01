@@ -5,6 +5,7 @@ source('Library\\utils.r')
 library(xgboost)
 library(ranger)
 library(caret)
+library(glmnet)
 options(scipen = 999)
 # replace the string with the directory of the project folder "Data"
 # the original datasets MUST be placed under the Data folder for the following script to run correctly.
@@ -14,11 +15,57 @@ folder_dir = r"(C:\Users\Chaconne\Documents\学业\Projects\Airbnb_predictive_an
 # export_cleaned(folder_dir)
 
 
+feature_engineering_full_set <- function(df) {
+  df <- df %>%
+    group_by(city) %>%
+    mutate(
+      city_count = n()
+    ) %>%
+    ungroup() %>%
+    mutate(
+      city = ifelse(
+        city_count <= 50, 'OTHER', city
+      ) %>% as.factor()
+    ) %>%
+    select(!city_count) %>%
+    group_by(market) %>%
+    mutate(
+      market_count = n()
+    ) %>%
+    ungroup() %>%
+    mutate(
+      market = ifelse(
+        market_count <= 25, 'OTHER', market
+      ) %>% as.factor()
+    ) %>%
+    select(!market_count) %>%
+    mutate(
+      host_same_neighbor = 
+        (neighbourhood == host_neighbourhood %>% as.character()) %>% as.factor(),
+      
+      
+    ) %>%
+    group_by(neighbourhood) %>%
+    mutate(
+      count_neighbor = n()
+    ) %>%
+    ungroup() %>%
+    mutate(
+      neighbourhood = ifelse(count_neighbor < 350, 'Other', neighbourhood)
+    ) %>%
+    select(!count_neighbor)
+  
+  return(df)
+}
+
+
 # read
 # x_train <- read.csv('Data\\x_train_clean.csv')
 # x_test <- read.csv('Data\\x_test_clean.csv')
-x <- get_cleaned(folder_dir)
+x_full_set <- get_cleaned(folder_dir)
 y_train <- read.csv('Data\\airbnb_train_y_2023.csv')
+
+x <- feature_engineering_full_set(x_full_set)
 
 hbr <- y_train$high_booking_rate %>% as.factor()
 prs <- y_train$perfect_rating_score %>% as.factor()
@@ -32,11 +79,38 @@ nrow(x_test) == 12205
 (length(hbr) == length(prs)) && (length(hbr) == nrow(y_train))
 
 
-#view
-summary(x_train)
+#view -----------------
+summary(x_train$host_neighbourhood)
+tar_fac <- y_train$perfect_rating_score %>% as.factor()
+
+obj_test <- x_train %>%
+  cbind(tar_fac) %>% 
+  group_by(neighbourhood) %>%
+  mutate(
+    inst_count = n()
+  ) %>%
+  ungroup() %>%
+  filter(tar_fac == 'YES') %>%
+  group_by(neighbourhood) %>%
+  mutate(
+    p_count = n(),
+    p_rate = p_count / inst_count
+  ) %>%
+  select(neighbourhood, inst_count, p_rate) %>%
+  arrange(inst_count) %>%
+  distinct()
 
 
-# train-validation split
+ggplot(data = obj_test, aes(x = neighbourhood, y = inst_count)) +
+  geom_bar(stat = "identity")
+
+boxplot(obj_test$inst_count)
+summary(obj_test$inst_count)
+hist(x$monthly_price)
+summary(x$price)
+
+
+# train-validation split -------------------------
 sampled = sample(1:nrow(x_train), 0.85 * nrow(x_train))
 x_tr = x_train[sampled, ]
 x_va = x_train[-sampled, ]
@@ -46,9 +120,11 @@ prs_tr = prs[sampled]
 prs_va = prs[-sampled]
 
 
+# summary(x$host_neighbourhood)
 # codes start here ----------------------------
 
 feature_engineering <- function(x) {
+
   res <- x %>%
     select(
       accommodates,
@@ -60,31 +136,38 @@ feature_engineering <- function(x) {
       bedrooms,
       bed_type,
       beds,
+      city,
       cancellation_policy,
       cleaning_fee,
-      
+      extra_people,
+      first_review,
       guests_included,
+      
       host_acceptance_rate,
       host_has_profile_pic,
       host_identity_verified,
+      host_is_superhost,
+      host_listings_count,
+      # host_location,
       host_response_rate,
-      host_response_time,
+      # host_response_time, in mutate 
+      host_since,
+      
       longitude,
       latitude,
-      
+      market,
+      neighbourhood,
+      host_same_neighbor,
       
       # added 2023-4-16
 
-      extra_people,
-      first_review,
-      host_is_superhost,
-      host_listings_count,
-      host_since,
+
+
+
       instant_bookable,
       # Internet,
       is_business_travel_ready,
       # TV,
-      monthly_price,
       room_type,
       
       # added 2023-4-17
@@ -109,7 +192,7 @@ feature_engineering <- function(x) {
       
       # removed 2023-4-17
       # license,
-      # neighbourhood,
+
       
       
       property_category,
@@ -126,6 +209,9 @@ feature_engineering <- function(x) {
       summary_snmt
     ) %>%
     mutate(
+      country = ifelse(x$country_code == 'US', 'US', 'Other') %>%
+        as.factor(),
+      
       host_response_time = as.factor(x$host_response_time),
 
       price = ifelse(price < 1, mean(price), price) %>% # this is to prevent -inf
@@ -134,12 +220,13 @@ feature_engineering <- function(x) {
       price_per_sqfeet = x$price / 
         ifelse(x$square_feet == 0, median(x$square_feet), x$square_feet),
       
-      monthly_price = 
-        ifelse(monthly_price < 1, mean(monthly_price), monthly_price) %>%
+      monthly_price =
+        ifelse(x$monthly_price < 1, mean(x$monthly_price), x$monthly_price) %>%
         log(),
       
       square_feet = 
-        ifelse(x$square_feet == 0, median(x$square_feet), x$square_feet),
+        ifelse(x$square_feet == 0, median(x$square_feet), x$square_feet)
+      
     )
   return(res)
 }
@@ -166,7 +253,8 @@ md_prs_xgb <- xgboost(
   label = prs_tr_dummy,
   nrounds = 2000,
   print_every_n = 100,
-  objective = 'binary:logistic'
+  objective = 'binary:logistic',
+  eval_metric = "auc"
 )
 y_pred_prob_xgb <- predict(md_prs_xgb, newdata = x_va_rf_dummy)
 plot_roc(y_pred_prob_xgb, prs_va)
@@ -207,16 +295,18 @@ get_auc(y_pred_prob_hbr_ranger, hbr_va)
 
 
 # ranger prs ----------------------------
+# optimal num tree = 800, mtry = 26
 md_hbr_rf_ranger <- ranger(x = x_tr_rf_dummy, y = prs_tr_rf,
-                           # mtry=22, 
-                           # num.trees=500,
+                           mtry=26, 
+                           num.trees=800,
                            importance="impurity",
                            probability = TRUE)
 y_pred_prob_prs_ranger <- 
   predict(md_hbr_rf_ranger, data = x_va_rf_dummy)$predictions[,2]
 plot_roc(y_pred_prob_prs_ranger, prs_va)
 get_auc(y_pred_prob_prs_ranger, prs_va)
-# 0.8023 \\ 0.8003  --> tpr ~ 0.4
+# last 0.7924
+# highest 0.804
 
 df_cutoff <- 
   get_cutoff_dataframe(y_pred_prob_prs_ranger, prs_va, 
@@ -233,6 +323,70 @@ wd <- getwd()
 setwd(folder_dir)
 write.table(final_pred_cls, "perfect_rating_score_group5.csv", row.names = FALSE)
 setwd(wd)
+
+
+# new code testing ----------------
+vec_param = 0:3 * 3 + 20
+vec_auc <- iterate_on(
+  on = vec_param,
+  action = \(param) {
+    md_hbr_rf_ranger <- ranger(
+      x = x_tr_rf_dummy, 
+      y = prs_tr_rf,
+      num.trees=800, # 800 appears optimal
+      mtry = param,
+      importance="impurity",
+      probability = TRUE
+    )
+    
+    y_pred_prob_prs_ranger <- 
+      predict(md_hbr_rf_ranger, data = x_va_rf_dummy)$predictions[,2]
+    return(get_auc(y_pred_prob_prs_ranger, prs_va))
+  }
+)
+
+
+ggplot(
+  data = data.frame(
+    mtry = vec_param,
+    auc = vec_auc
+  ),
+  aes(x = mtry, y = auc)
+) + geom_line()
+
+
+
+# logistic lasso ------------------
+# best lambda appears to be 10^-7
+vec_lasso_lambda = seq(from = 10^-7, to = 2, length.out = 100)
+vec_lass_auc <- iterate_on(
+  on = vec_lasso_lambda,
+  action = \(param) {
+    logistic_lasso_prs <- glmnet(
+      x = x_tr_rf_dummy, 
+      y = prs_tr_dummy,
+      lambda = param, 
+      alpha = 0,
+      family="binomial"
+    )
+    
+    pred_prob <- predict(logistic_lasso_prs, newx = x_va_rf_dummy, type = "response")
+    return(
+      get_auc(pred_prob, prs_va_dummy)
+    )
+  },
+  
+  verbose = FALSE
+)
+
+
+ggplot(
+  data = data.frame(
+    lambda = vec_lasso_lambda,
+    auc = vec_lass_auc
+  ),
+  aes(x = lambda, y = auc)
+) + geom_line()
 
 
 # fpr checking flow -----------------------
@@ -273,134 +427,6 @@ for (ind in 1:check_time) {
 }
 
 
-# single parameter tuning flow ------------------------
-vec_param = 1:5 * 50
-vec_tr_aucs = rep(0, length(vec_param))
-vec_va_aucs = rep(0, length(vec_param))
-vec_tr_accs = rep(0, length(vec_param))
-vec_va_accs = rep(0, length(vec_param))
-for (ind in 1:length(vec_param)) {
-  param = vec_param[ind]
-  
-  md <- ranger(x = x_tr_rf_dummy, 
-               y = prs_tr_rf, 
-               # mtry = 22, 
-               num.trees = param,
-               importance="impurity",
-               probability = TRUE)
-  
-  y_va_pred_prob <- 
-    predict(md, data = x_va_rf_dummy)$predictions[,2]
-  
-  y_tr_pred_prob <-
-    predict(md, data = x_tr_rf_dummy)$predictions[,2]
-  
-  va_auc = get_auc(y_va_pred_prob, prs_va)
-  tr_auc = get_auc(y_tr_pred_prob, prs_tr)
-  
-  vec_va_aucs[ind] = va_auc
-  vec_tr_aucs[ind] = tr_auc
-  
-  y_va_cls <- ifelse(y_va_pred_prob >= 0.5, 'YES', 'NO') %>%
-    get_accuracy(prs_va)
-  y_tr_cls <- ifelse(y_tr_pred_prob >= 0.5, 'YES', 'NO') %>%
-    get_accuracy(prs_tr)
-  
-  
-  vec_va_accs[ind] = y_va_cls
-  vec_tr_accs[ind] = y_tr_cls
-}
-
-
-df_plot <- data.frame(
-  vec_param = vec_param,
-  vec_va_accs = vec_va_accs,
-  vec_tr_accs = vec_tr_accs,
-  vec_va_aucs = vec_va_aucs,
-  vec_tr_aucs = vec_tr_aucs
-)
-
-ggplot(data = df_plot, aes(x = vec_param)) +
-  # ylim(0, 1) +
-  geom_line(aes(y = vec_va_aucs, color = 'red')) +
-  geom_line(aes(y = vec_tr_aucs, color = 'blue')) +
-  geom_line(aes(y = vec_va_accs, color = 'red')) +
-  geom_line(aes(y = vec_tr_accs, color = 'blue'))
-
-
-# cross val flow
-cross_val_n = 5
-cv_tr_aucs = rep(0, cross_val_n)
-cv_va_aucs = rep(0, cross_val_n)
-cv_tr_accs = rep(0, cross_val_n)
-cv_va_accs = rep(0, cross_val_n)
-for (ind in 1:cross_val_n) {
-  # train-validation split
-  sampled = sample(1:nrow(x_train), 0.75 * nrow(x_train))
-  x_tr = x_train[sampled, ]
-  x_va = x_train[-sampled, ]
-  hbr_tr = hbr[sampled]
-  hbr_va = hbr[-sampled]
-  prs_tr = prs[sampled]
-  prs_va = prs[-sampled]
-  
-  
-  x_tr_rf <- feature_engineering(x_tr) 
-  x_va_rf <- feature_engineering(x_va)
-  hbr_tr_rf <- hbr_tr
-  prs_tr_rf <- prs_tr
-  md_dummy <- dummyVars(formula = ~., x_tr_rf, fullRank = TRUE)
-  x_tr_rf_dummy <- predict(md_dummy, x_tr_rf)
-  x_va_rf_dummy <- predict(md_dummy, x_va_rf)
-  prs_tr_dummy = ifelse(prs_tr_rf == 'YES', 1, 0)
-  hbr_tr_dummy = ifelse(hbr_tr_rf == 'TES', 1, 0)
-  
-  
-  md <- ranger(x = x_tr_rf_dummy, 
-               y = prs_tr_rf, 
-               mtry = 22, 
-               num.trees = 500,
-               importance="impurity",
-               probability = TRUE)
-  
-  y_va_pred_prob <- 
-    predict(md, data = x_va_rf_dummy)$predictions[,2]
-  
-  y_tr_pred_prob <-
-    predict(md, data = x_tr_rf_dummy)$predictions[,2]
-  
-  va_auc = get_auc(y_va_pred_prob, prs_va)
-  tr_auc = get_auc(y_tr_pred_prob, prs_tr)
-  
-  cv_va_aucs[ind] = va_auc
-  cv_tr_aucs[ind] = tr_auc
-  
-  y_va_cls <- ifelse(y_va_pred_prob >= 0.5, 'YES', 'NO') %>%
-    get_accuracy(prs_va)
-  y_tr_cls <- ifelse(y_tr_pred_prob >= 0.5, 'YES', 'NO') %>%
-    get_accuracy(prs_tr)
-  
-  
-  cv_va_accs[ind] = y_va_cls
-  cv_tr_accs[ind] = y_tr_cls
-}
-
-df_plot2 <- data.frame(
-  param = 1:cross_val_n,
-  va_accs = cv_va_accs,
-  tr_accs = cv_tr_accs,
-  va_aucs = cv_va_aucs,
-  tr_aucs = cv_tr_aucs
-)
-
-ggplot(data = df_plot2, aes(x = param)) +
-  # ylim(0, 1) +
-  geom_line(aes(y = va_aucs)) +
-  geom_line(aes(y = tr_aucs)) +
-  geom_line(aes(y = va_accs)) +
-  geom_line(aes(y = tr_accs))
-
-
 
 # logistic hbr --------------------------
 md_logistic <- glm(data.frame(x_tr_rf_dummy, hbr_tr), formula = hbr_tr~., family = 'binomial')
@@ -415,6 +441,7 @@ md_prs_logit <- glm(data.frame(x_tr_rf_dummy, prs_tr), formula = prs_tr~., famil
 
 y_pred_prob_prs_logit <- predict(md_prs_logit, newdata = data.frame(x_va_rf_dummy), type = 'response')
 plot_roc(y_pred_prob_prs_logit, prs_va)
+
 
 
 
@@ -486,13 +513,6 @@ listing_freq <- x_tr %>%
 
 barplot(height = listing_freq$total, names.arg = listing_freq$host_listings_count)
 
-
-# draft -------------------------------
-
-
-# should refine the function by returning the cutoff that maximizes the tpr
-# given a maximum fpr
-find_cutoff(y_pred_prob_hbr_ranger, hbr_va, level = c('NO', 'YES'), max_fpr = 0.1)
 
 
 

@@ -116,4 +116,25 @@ plot_cutoff_dataframe <- function(df) {
 }
 
 
+iterate_on <- function(on, action, verbose = TRUE) {
+  vec_res <- c()
+  if (verbose) {
+    for (element in on) {
+      res <- action(element)
+      vec_res <- c(vec_res, res)
+      paste(
+        element, ' completed'
+      ) %>%
+        print()
+    }
+  }
+  else{
+    for (element in on) {
+      res <- action(element)
+      vec_res <- c(vec_res, res)
+    }
+  }
+  
+  return(vec_res)
+}
 
