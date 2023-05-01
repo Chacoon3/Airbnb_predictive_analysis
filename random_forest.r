@@ -241,7 +241,6 @@ prs_tr = prs[sampled]
 prs_va = prs[-sampled]
 
 
-# summary(x$host_neighbourhood)
 # codes start here ----------------------------
 
 
@@ -366,12 +365,12 @@ y_pred_prob_prs_ranger <-
   predict(md_prs_ranger, data = x_va_rf)$predictions[,2]
 plot_roc(y_pred_prob_prs_ranger, prs_va)
 get_auc(y_pred_prob_prs_ranger, prs_va)
-# last 0.808
-# highest 0.808
+# last 0.8131754
+# highest 0.8131754
 
 df_cutoff <- 
   get_cutoff_dataframe(y_pred_prob_prs_ranger, prs_va, 
-                       level = c('NO', 'YES'),
+                       level = c(0, 1),
                        max_fpr = 0.08)
 
 plot_cutoff_dataframe(df_cutoff)
