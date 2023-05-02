@@ -398,19 +398,18 @@ dc_quinn <- function(dataframe) {
   attach(dataframe)
   res <- dataframe %>%
     mutate(
-      state = ifelse(is.na(state), 'MISSING', state), # fixed 2023-4-6
+      state = ifelse(is.na(state), 'MISSING', toupper(state)) %>%
+        as.factor(),
       smart_location = ifelse(is.na(smart_location), 'MISSING', smart_location), # fixed 2023-4-6
       security_deposit=parse_number(security_deposit), #convert dollar to number
       weekly_price=parse_number(weekly_price), #convert dollar to number
       room_type=as.factor(room_type), #category variable
       smart_location=as.factor(smart_location), #category variable - may be automatically generated
-      state=as.factor(state), #category variable
       #continuous variables replaced with mean, discrete with median
       security_deposit = ifelse(is.na(security_deposit), 0, security_deposit), #replace na's with mean # 4-16: #4-16: replacing value change from mean to 0
       square_feet = ifelse(is.na(square_feet), median(square_feet, na.rm = TRUE), square_feet), #replace na's with median
       weekly_price = ifelse(is.na(weekly_price), 0, weekly_price), #replace na's with m0
-      zipcode=ifelse(is.na(zipcode),"MISSING",zipcode),
-      zipcode=as.factor(zipcode),
+      zipcode=ifelse(is.na(zipcode),"MISSING",zipcode) %>% as.factor()
     )
   detach(dataframe)
   

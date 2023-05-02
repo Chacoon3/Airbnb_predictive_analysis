@@ -2,6 +2,7 @@
 # Libraries called in the referenced file will automatically be included in this file
 source('Library\\data_cleaning.r')
 source('Library\\utils.r')
+# source('Library\\external_dataset_hotel.r')
 library(xgboost)
 library(ranger)
 library(caret)
@@ -15,9 +16,8 @@ folder_dir = r"(C:\Users\Chaconne\Documents\学业\Projects\Airbnb_predictive_an
 x_full_set <- get_cleaned(folder_dir, FALSE)
 y_train <- read.csv('Data\\airbnb_train_y_2023.csv')
 
-
-
 # feature engineering ------------
+
 feature_engineering_full_set <- function(df) {
   df <- df %>%
     group_by(city) %>%
@@ -27,8 +27,7 @@ feature_engineering_full_set <- function(df) {
     ungroup() %>%
     mutate(
       city = ifelse(
-        # city_count <= 50, 'OTHER', city
-        city_count <= 200, 'OTHER', city
+        city_count <= 200, 'Other', city # originally 50
       ) %>% as.factor()
     ) %>%
     select(!city_count) %>%
@@ -39,7 +38,7 @@ feature_engineering_full_set <- function(df) {
     ungroup() %>%
     mutate(
       market = ifelse(
-        market_count <= 25, 'OTHER', market
+        market_count <= 25, 'Other', market
       ) %>% as.factor()
     ) %>%
     select(!market_count) %>%
@@ -68,6 +67,17 @@ feature_engineering_full_set <- function(df) {
       ),
       
       host_response_time = host_response_time %>% as.factor()
+    ) %>%
+    group_by(state) %>%
+    mutate(
+      state_count = n()
+    ) %>%
+    ungroup() %>%
+    mutate(
+      state = ifelse(state_count <= 15, 'other', state) %>% as.factor()
+    ) %>%
+    select(
+      !state_count
     )
   
   return(df)
@@ -114,8 +124,8 @@ feature_engineering <- function(x) {
       is_business_travel_ready,
       require_guest_phone_verification,
       require_guest_profile_picture,
-      # TV,
       room_type,
+      # state,
       
       # added 2023-4-17
       `self check-in`,
@@ -180,7 +190,8 @@ feature_engineering <- function(x) {
 }
 
 
-x <- feature_engineering_full_set(x_full_set) %>%
+x <- x_full_set %>%
+  feature_engineering_full_set() %>%
   feature_engineering()
 
 
@@ -201,11 +212,10 @@ nrow(x_train) == nrow(y_train)
 nrow(x_test) == 12205
 (length(hbr) == length(prs)) && (length(hbr) == nrow(y_train))
 
-
 #view -----------------
-x_view <- x_full_set[1:nrow(y_train),]
+x_view <- x[1:nrow(y_train),]
 # feature of interest
-foi <- x_view$host_since
+foi <- x_view$state
 summary(foi) # useful
 boxplot(foi)
 
@@ -216,18 +226,18 @@ obj_test <- x_view %>%
     host_response_time = host_response_time %>% as.factor()
   ) %>%
   cbind(tar_fac) %>% 
-  group_by(host_response_time) %>%
+  group_by(state) %>%
   mutate(
     inst_count = n()
   ) %>%
   ungroup() %>%
   filter(tar_fac == 'YES') %>%
-  group_by(host_response_time) %>%
+  group_by(state) %>%
   mutate(
     p_count = n(),
     p_rate = p_count / inst_count
   ) %>%
-  select(host_response_time, inst_count, p_rate) %>%
+  select(state, inst_count, p_rate) %>%
   arrange(inst_count) %>%
   distinct()
 
@@ -242,7 +252,7 @@ summary(x$price)
 
 
 # train-validation split -------------------------
-sampled = sample(1:nrow(x_train), 0.8 * nrow(x_train))
+sampled = base::sample(1:nrow(x_train), 0.8 * nrow(x_train))
 x_tr_rf = x_tr_dummy[sampled, ]
 x_va_rf = x_tr_dummy[-sampled, ]
 hbr_tr = hbr[sampled]
@@ -375,22 +385,29 @@ y_pred_prob_prs_ranger <-
   predict(md_prs_ranger, data = x_va_rf)$predictions[,2]
 plot_roc(y_pred_prob_prs_ranger, prs_va)
 get_auc(y_pred_prob_prs_ranger, prs_va)
-# last 0.8131754
+# last 0.8131754 \\ 0.8049635
 # highest 0.8131754
 
-get_cutoff_dataframe(y_pred_prob_prs_ranger, prs_va, 
+df_cutoff <- get_cutoff_dataframe(y_pred_prob_prs_ranger, prs_va, 
                        level = c(0, 1),
-                       max_fpr = 0.08) %>%
-  plot_cutoff_dataframe()
-
+                       max_fpr = 0.068)
+df_cutoff %>% plot_cutoff_dataframe()
 df_cutoff$cutoff_bound[1]
 
-final_pred_prob = predict(md_hbr_rf_ranger, data = x_te_rf_dummy)$predictions[,2]
+
+
+final_pred_prob = predict(md_prs_ranger, data = x_te_dummy)$predictions[,2]
 final_pred_cls = ifelse(final_pred_prob > df_cutoff$cutoff_bound[1], 'YES', 'NO')
 wd <- getwd()
 setwd(folder_dir)
 write.table(final_pred_cls, "perfect_rating_score_group5.csv", row.names = FALSE)
 setwd(wd)
+
+saveRDS(md_prs_ranger,
+        file = 
+          r"(C:\Users\Chaconne\Documents\学业\Projects\Airbnb_predictive_analysis\Models\md_prs_ranger_0501_auc_081.rsd)")
+
+
 
 
 # new code testing ----------------
@@ -431,22 +448,32 @@ vec_lass_auc <- iterate_on(
   on = vec_lasso_lambda,
   action = \(param) {
     logistic_lasso_prs <- glmnet(
-      x = x_tr_rf_dummy, 
-      y = prs_tr_dummy,
+      x = x_tr_rf, 
+      y = prs_tr,
       lambda = param, 
       alpha = 0,
       family="binomial"
     )
     
-    pred_prob <- predict(logistic_lasso_prs, newx = x_va_rf_dummy, type = "response")
+    pred_prob <- predict(logistic_lasso_prs, newx = x_va_rf, type = "response")
     return(
-      get_auc(pred_prob, prs_va_dummy)
+      get_auc(pred_prob, prs_va)
     )
   },
   
   verbose = FALSE
 )
 
+logistic_lasso_prs <- glmnet(
+  x = x_tr_rf, 
+  y = prs_tr,
+  lambda = 10^-7, 
+  alpha = 0,
+  family="binomial"
+)
+
+pred_prob <- predict(logistic_lasso_prs, newx = x_va_rf, type = "response")
+get_auc(pred_prob, prs_va)
 
 ggplot(
   data = data.frame(
@@ -458,41 +485,59 @@ ggplot(
 
 
 # fpr checking flow -----------------------
-check_time = 5
-sample_size = 30000
+
+check_time = 4
+set_cutoff = 0.515
+sample_size = 60000
 vec_fpr = rep(0, check_time)
 vec_tpr = rep(0, check_time)
-set_cutoff = 0.3
-x_source = rbind(x_tr_rf_dummy, x_va_rf_dummy)
+x_source = rbind(x_tr_rf, x_va_rf)
+y_source = c(prs_tr, prs_va)
 for (ind in 1:check_time) {
   sampled = sample(1:nrow(x_source), size = sample_size, replace = FALSE)
   x_sampled = x_source[sampled,]
-  y_sampled = prs[sampled]
-  # y_pred_prob = predict(md_hbr_rf_ranger, data = x_sampled)$predictions[,2]
-  # y_pred_prob = predict(md_prs_xgb, newdata = x_sampled)
-  y_pred_prob = predict(md_prs_logit, newdata = data.frame(x_sampled))
-  y_pred_cls = ifelse(y_pred_prob > set_cutoff, 'YES', 'NO')
+  y_sampled = y_source[sampled]
+
+  p = 1
+  n = 0
   
+  y_pred_prob = predict(md_prs_ranger, data = x_sampled)$predictions[,2]
+  y_pred_cls = ifelse(y_pred_prob >= set_cutoff, p, n)
   
-  n = 'NO'
-  p = 'YES'
-  get_fpr <- function(y_pred, y_valid) {
-    count_fp = sum((y_valid == n) & (y_pred == p))
-    count_tn = sum(y_valid == n)
-    return(count_fp / count_tn)
+
+  # cm = caret::confusionMatrix(
+  #   data = y_pred_cls %>% as.factor(), #predictions
+  #   reference = y_sampled %>% as.factor(), #actuals
+  #   positive = '1') 
+  
+  get_tpr <- function(y_pred, y_val, n, p) {
+    tp = sum((y_pred == y_val) & (y_pred == p))
+    return(
+      tp / sum(y_val == p)
+    )
   }
-  get_tpr <- function(y_pred, y_valid) {
-    count_tp = sum((y_valid == p) & (y_valid == y_pred))
-    count_p = sum(y_valid == p)
-    return(count_tp / count_p)
+  
+  
+  get_fpr <- function(y_pred, y_val, n, p) {
+    fp = sum((y_pred == p) & (y_pred != y_val)) 
+    return(
+      fp / sum(y_val == n)
+    )
   }
   
-  fpr = get_fpr(y_pred_cls, y_sampled)
-  vec_fpr[ind] = fpr
   
-  tpr = get_tpr(y_pred_cls, y_sampled)
-  vec_tpr[ind] = tpr
+  vec_fpr[ind] = get_fpr(y_pred_cls, y_sampled, n, p)
+  vec_tpr[ind] = get_tpr(y_pred_cls, y_sampled, n, p)
 }
+
+
+ggplot(
+  data = data.frame(
+    fpr = vec_fpr,
+    tpr = vec_tpr
+  ),
+  aes(x = fpr, y = tpr)
+) + geom_point()
 
 
 
@@ -590,24 +635,28 @@ barplot(height = listing_freq$total, names.arg = listing_freq$host_listings_coun
 
 
 # new dataset ------------------
-df_redfin <- read.csv('Data\\city_market_tracker.tsv000', sep = '\t')
+# df_redfin <- read.csv('Data\\city_market_tracker.tsv000', sep = '\t')
+# 
+# 
+# df_redfin_2023_mar <- df_redfin %>%
+#   mutate(
+#     period_begin = period_begin %>% as.Date(),
+#     period_end = period_end %>% as.Date(),
+#   ) %>%
+#   select(
+#     !period_duration
+#   ) %>%
+#   filter(
+#     (period_begin %>% data.table::year()) == 2023 &
+#       (period_begin %>% data.table::month()) == 3
+#   )
+# 
+# 
+# find_monotonous(df_redfin_2023_mar)
 
+df_redfin_2023_mar <- read.csv('Data\\Redfin_city_market_tracker_2023_3.csv')
 
-df_redfin_2023_mar <- df_redfin %>%
-  mutate(
-    period_begin = period_begin %>% as.Date(),
-    period_end = period_end %>% as.Date(),
-  ) %>%
-  select(
-    !period_duration
-  ) %>%
-  filter(
-    (period_begin %>% data.table::year()) == 2023 &
-      (period_begin %>% data.table::month()) == 3
-  )
-
-
-find_monotonous(df_redfin_2023_mar)
+names(df_redfin_2023_mar)
 
 df_redfin_current <- df_redfin_2023_mar %>%
   group_by(city) %>%
@@ -620,7 +669,8 @@ df_redfin_current <- df_redfin_2023_mar %>%
   ungroup() %>%
   mutate(
     city = 
-      ifelse(city_occurence < 5, 'other', city)
+      ifelse(city_occurence < 5, 'other', city),
+    state = state_code
   ) %>%
   select(
     !c(
@@ -630,13 +680,27 @@ df_redfin_current <- df_redfin_2023_mar %>%
       region_type,
       region_type_id,
       is_seasonally_adjusted,
-      last_updated
+      last_updated,
+      state_code
     )
-  )
+  ) %>%
+  group_by(state, city) %>%
+  mutate(
+    median_price = mean(median_sale_price, na.rm = TRUE)
+  ) %>%
+  ungroup()
 
 names(df_redfin_current)
-summary(df_redfin_2023_mar$state_code %>% as.factor())
-summary(x_view$state %>% as.factor())
+summary(df_redfin_current$median_price)
+boxplot(df_redfin_current$median_price)
+summary(x$state)
 
-sum(x_view$city %in% df_redfin_2023_mar$city)
+x_full_set$state[1:10]
+df_redfin_current$state[1:10]
+sum(x_full_set$city %in% df_redfin_2023_mar$city)
+sum(x_full_set$state %in% df_redfin_2023_mar$state)
 nrow(x_view)
+
+
+summary(x$city)
+summary(df_redfin_current$state)

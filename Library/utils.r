@@ -139,6 +139,7 @@ iterate_on <- function(on, action, verbose = TRUE) {
 }
 
 
+# find columns that are monotonously valued
 find_monotonous <- function(df) {
   col_count = ncol(df)
   vec_mono_col = c()
@@ -154,4 +155,3 @@ find_monotonous <- function(df) {
     names(df)[vec_mono_col]
   )
 }
-
