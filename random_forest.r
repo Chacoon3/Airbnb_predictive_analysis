@@ -11,7 +11,13 @@ options(scipen = 999)
 # the original datasets MUST be placed under the Data folder for the following script to run correctly.
 folder_dir = r"(C:\Users\Chaconne\Documents\学业\Projects\Airbnb_predictive_analysis\Data)"
 
+# read -----------------
+x_full_set <- get_cleaned(folder_dir, FALSE)
+y_train <- read.csv('Data\\airbnb_train_y_2023.csv')
 
+
+
+# feature engineering ------------
 feature_engineering_full_set <- function(df) {
   df <- df %>%
     group_by(city) %>%
@@ -21,7 +27,8 @@ feature_engineering_full_set <- function(df) {
     ungroup() %>%
     mutate(
       city = ifelse(
-        city_count <= 50, 'OTHER', city
+        # city_count <= 50, 'OTHER', city
+        city_count <= 200, 'OTHER', city
       ) %>% as.factor()
     ) %>%
     select(!city_count) %>%
@@ -39,8 +46,6 @@ feature_engineering_full_set <- function(df) {
     mutate(
       host_same_neighbor = 
         (neighbourhood == host_neighbourhood %>% as.character()) %>% as.factor(),
-      
-      
     ) %>%
     group_by(neighbourhood) %>%
     mutate(
@@ -51,7 +56,19 @@ feature_engineering_full_set <- function(df) {
       neighbourhood = ifelse(count_neighbor < 350, 'Other', neighbourhood) %>%
         as.factor()
     ) %>%
-    select(!count_neighbor)
+    select(!count_neighbor) %>%
+    mutate(
+      min_night_length = case_when(
+        minimum_nights >= 365 ~ 'Year',
+        minimum_nights >= 93 ~ 'Season',
+        minimum_nights >= 30 ~ 'Month',
+        minimum_nights >= 7 ~ 'Week',
+        minimum_nights >= 2 ~ 'Days',
+        TRUE ~ 'No'
+      ),
+      
+      host_response_time = host_response_time %>% as.factor()
+    )
   
   return(df)
 }
@@ -82,16 +99,17 @@ feature_engineering <- function(x) {
       host_identity_verified,
       host_is_superhost,
       host_listings_count,
-      # host_location,
+      host_same_neighbor,
       host_response_rate,
-      # host_response_time, in mutate 
+      host_response_time,
       host_since,
       
       longitude,
       latitude,
       market,
+      min_night_length,
       neighbourhood,
-      host_same_neighbor,
+
       instant_bookable,
       is_business_travel_ready,
       require_guest_phone_verification,
@@ -128,14 +146,14 @@ feature_engineering <- function(x) {
       price,
       
       
-      access_snmt,
-      desc_snmt,
-      host_about_snmt,
-      house_rules_snmt,
-      interaction_snmt,
-      neighborhood_snmt,
-      notes_snmt,
-      summary_snmt
+      # access_snmt,
+      # desc_snmt,
+      # host_about_snmt,
+      # house_rules_snmt,
+      # interaction_snmt,
+      # neighborhood_snmt,
+      # notes_snmt,
+      # summary_snmt
     ) %>%
     mutate(
       country = ifelse(x$country_code == 'US', 'US', 'Other') %>%
@@ -162,14 +180,6 @@ feature_engineering <- function(x) {
 }
 
 
-
-
-
-# read
-x_full_set <- get_cleaned(folder_dir)
-
-y_train <- read.csv('Data\\airbnb_train_y_2023.csv')
-
 x <- feature_engineering_full_set(x_full_set) %>%
   feature_engineering()
 
@@ -194,30 +204,30 @@ nrow(x_test) == 12205
 
 #view -----------------
 x_view <- x_full_set[1:nrow(y_train),]
-sop <- x_view$security_deposit / ifelse(x_view$price == 0, 1, x_view$price)
-summary(sop) # useful
-boxplot(sop)
-summary(x_view$security_deposit) # useful
-summary(x_view$requires_license)
-tar_fac <- y_train$perfect_rating_score %>% as.factor()
+# feature of interest
+foi <- x_view$host_since
+summary(foi) # useful
+boxplot(foi)
 
+summary(x_view$minimum_nights)
+tar_fac <- y_train$perfect_rating_score %>% as.factor()
 obj_test <- x_view %>%
   mutate(
-    has_deposit = ifelse(security_deposit > 0, 1, 0) %>% as.factor,
+    host_response_time = host_response_time %>% as.factor()
   ) %>%
   cbind(tar_fac) %>% 
-  group_by(has_deposit) %>%
+  group_by(host_response_time) %>%
   mutate(
     inst_count = n()
   ) %>%
   ungroup() %>%
   filter(tar_fac == 'YES') %>%
-  group_by(has_deposit) %>%
+  group_by(host_response_time) %>%
   mutate(
     p_count = n(),
     p_rate = p_count / inst_count
   ) %>%
-  select(has_deposit, inst_count, p_rate) %>%
+  select(host_response_time, inst_count, p_rate) %>%
   arrange(inst_count) %>%
   distinct()
 
@@ -343,15 +353,15 @@ get_auc(y_pred_rf[,2], prs_va)
 
 
 # ranger hbr ---------------------------------
-md_hbr_rf_ranger <- ranger(x = x_tr_rf_dummy, y = hbr_tr_rf,
-                 mtry=22, num.trees=500,
+md_hbr_ranger <- ranger(x = x_tr_rf, y = hbr_tr,
+                 mtry=26, num.trees=800,
                  importance="impurity",
                  probability = TRUE)
 y_pred_prob_hbr_ranger <- 
-  predict(md_hbr_rf_ranger, data = x_va_rf_dummy)$predictions[,2]
+  predict(md_hbr_ranger, data = x_va_rf)$predictions[,2]
 plot_roc(y_pred_prob_hbr_ranger, hbr_va)
 get_auc(y_pred_prob_hbr_ranger, hbr_va)
-# 0.8733637 \\ 0.873 \\ 0.8663719
+# 0.8733637 \\ 0.873 \\ 0.8663719 \\ 0.8788666
 
 
 # ranger prs ----------------------------
@@ -368,12 +378,10 @@ get_auc(y_pred_prob_prs_ranger, prs_va)
 # last 0.8131754
 # highest 0.8131754
 
-df_cutoff <- 
-  get_cutoff_dataframe(y_pred_prob_prs_ranger, prs_va, 
+get_cutoff_dataframe(y_pred_prob_prs_ranger, prs_va, 
                        level = c(0, 1),
-                       max_fpr = 0.08)
-
-plot_cutoff_dataframe(df_cutoff)
+                       max_fpr = 0.08) %>%
+  plot_cutoff_dataframe()
 
 df_cutoff$cutoff_bound[1]
 
@@ -576,3 +584,59 @@ barplot(height = listing_freq$total, names.arg = listing_freq$host_listings_coun
 
 
 
+
+
+
+
+
+# new dataset ------------------
+df_redfin <- read.csv('Data\\city_market_tracker.tsv000', sep = '\t')
+
+
+df_redfin_2023_mar <- df_redfin %>%
+  mutate(
+    period_begin = period_begin %>% as.Date(),
+    period_end = period_end %>% as.Date(),
+  ) %>%
+  select(
+    !period_duration
+  ) %>%
+  filter(
+    (period_begin %>% data.table::year()) == 2023 &
+      (period_begin %>% data.table::month()) == 3
+  )
+
+
+find_monotonous(df_redfin_2023_mar)
+
+df_redfin_current <- df_redfin_2023_mar %>%
+  group_by(city) %>%
+  mutate(
+    city_occurence = n()
+  ) %>%
+  arrange(
+    city_occurence
+  ) %>%
+  ungroup() %>%
+  mutate(
+    city = 
+      ifelse(city_occurence < 5, 'other', city)
+  ) %>%
+  select(
+    !c(
+      city_occurence,
+      period_begin,
+      period_end,
+      region_type,
+      region_type_id,
+      is_seasonally_adjusted,
+      last_updated
+    )
+  )
+
+names(df_redfin_current)
+summary(df_redfin_2023_mar$state_code %>% as.factor())
+summary(x_view$state %>% as.factor())
+
+sum(x_view$city %in% df_redfin_2023_mar$city)
+nrow(x_view)

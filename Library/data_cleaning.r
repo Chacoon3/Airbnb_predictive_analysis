@@ -176,45 +176,76 @@ dc_preprocess <- function(x_train, x_test, y_train) {
 }
 
 
-dc_sean <- function(dataframe) {
+dc_sean <- function(dataframe, with_sent = TRUE) {
   
   # feature engineering 
-  dataframe <- dataframe %>%
-    mutate(
-      access_snmt = get_sent_score(dataframe$access) %>% as.factor(),
-      desc_snmt = get_sent_score(dataframe$description) %>% as.factor(),
-      host_about_snmt = get_sent_score(dataframe$host_about) %>% as.factor(),
-      house_rules_snmt = get_sent_score(dataframe$house_rules) %>% as.factor(),
-      interaction_snmt = get_sent_score(dataframe$interaction) %>% as.factor(),
-      neighborhood_snmt = get_sent_score(dataframe$neighborhood) %>% as.factor(),
-      notes_snmt = get_sent_score(dataframe$notes) %>% as.factor(),
-      summary_snmt = get_sent_score(dataframe$summary) %>% as.factor(),
-      
+  if (with_sent) {
+    dataframe <- dataframe %>%
+      mutate(
+        access_snmt = get_sent_score(dataframe$access) %>% as.factor(),
+        desc_snmt = get_sent_score(dataframe$description) %>% as.factor(),
+        host_about_snmt = get_sent_score(dataframe$host_about) %>% as.factor(),
+        house_rules_snmt = get_sent_score(dataframe$house_rules) %>% as.factor(),
+        interaction_snmt = get_sent_score(dataframe$interaction) %>% as.factor(),
+        neighborhood_snmt = get_sent_score(dataframe$neighborhood) %>% as.factor(),
+        notes_snmt = get_sent_score(dataframe$notes) %>% as.factor(),
+        summary_snmt = get_sent_score(dataframe$summary) %>% as.factor(),
+        
+        
+        first_review = dataframe$first_review %>% as.Date(), # added  2023-4-16
+        host_since = dataframe$host_since %>%
+          replace_na(replace = get_mode(dataframe$host_since)) %>% # added  2023-4-16
+          as.Date(),
+      ) %>%
+      mutate(
+        host_listings_count =  # 2023-4-4 fixed
+          ifelse(is.na(dataframe$host_listings_count),
+                 median(dataframe$host_listings_count, na.rm = TRUE),
+                 dataframe$host_listings_count),
+        host_total_listings_count = # 2023-4-4 fixed
+          ifelse(is.na(dataframe$host_total_listings_count), 
+                 median(dataframe$host_total_listings_count, na.rm = TRUE),
+                 dataframe$host_total_listings_count),
+        host_response_time = # fixed 2023-4-5
+          ifelse(is.na(dataframe$host_response_time), 
+                 get_mode(dataframe$host_response_time), 
+                 dataframe$host_response_time),
+        city = as.factor(dataframe$city), # fixed 2023-4-6,
+        
+        license = dataframe$license %>%
+          replace_na("Missing") %>%
+          as.factor() # fixed 2023-4-16
+      )
+  }
+  else{
+    dataframe <- dataframe %>%
+      mutate(
+        first_review = dataframe$first_review %>% as.Date(), # added  2023-4-16
+        host_since = dataframe$host_since %>%
+          replace_na(replace = get_mode(dataframe$host_since)) %>% # added  2023-4-16
+          as.Date(),
+      ) %>%
+      mutate(
+        host_listings_count =  # 2023-4-4 fixed
+          ifelse(is.na(dataframe$host_listings_count),
+                 median(dataframe$host_listings_count, na.rm = TRUE),
+                 dataframe$host_listings_count),
+        host_total_listings_count = # 2023-4-4 fixed
+          ifelse(is.na(dataframe$host_total_listings_count), 
+                 median(dataframe$host_total_listings_count, na.rm = TRUE),
+                 dataframe$host_total_listings_count),
+        host_response_time = # fixed 2023-4-5
+          ifelse(is.na(dataframe$host_response_time), 
+                 get_mode(dataframe$host_response_time), 
+                 dataframe$host_response_time),
+        city = as.factor(dataframe$city), # fixed 2023-4-6,
+        
+        license = dataframe$license %>%
+          replace_na("Missing") %>%
+          as.factor() # fixed 2023-4-16
+      )
+  }
 
-      first_review = dataframe$first_review %>% as.Date(), # added  2023-4-16
-      host_since = dataframe$host_since %>%
-        replace_na(replace = get_mode(dataframe$host_since)) %>% # added  2023-4-16
-        as.Date(),
-    ) %>%
-    mutate(
-      host_listings_count =  # 2023-4-4 fixed
-        ifelse(is.na(dataframe$host_listings_count),
-               median(dataframe$host_listings_count, na.rm = TRUE),
-               dataframe$host_listings_count),
-      host_total_listings_count = # 2023-4-4 fixed
-        ifelse(is.na(dataframe$host_total_listings_count), 
-               median(dataframe$host_total_listings_count, na.rm = TRUE),
-               dataframe$host_total_listings_count),
-      host_response_time = # fixed 2023-4-5
-        ifelse(is.na(dataframe$host_response_time), 
-               get_mode(dataframe$host_response_time), 
-               dataframe$host_response_time),
-      city = as.factor(dataframe$city), # fixed 2023-4-6,
-      
-      license = dataframe$license %>%
-        replace_na("Missing") %>%
-        as.factor() # fixed 2023-4-16
-    )
 
   print('data cleaning completed: 90% ...')
   return(dataframe)
@@ -395,7 +426,7 @@ dc_col57_69 <- function(df){
 }
 
 
-get_cleaned <- function(folder_dir) {
+get_cleaned <- function(folder_dir, with_sent = TRUE) {
   print('initializing data cleaning ...')
   
   wd <- getwd()
@@ -413,7 +444,7 @@ get_cleaned <- function(folder_dir) {
     dc_xiaoze() %>%
     dc_johannah() %>%
     dc_quinn() %>%
-    dc_sean() %>%
+    dc_sean(with_sent = with_sent) %>%
     dc_col57_69()
   
   row_total <- nrow(df)

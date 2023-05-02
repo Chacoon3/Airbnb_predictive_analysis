@@ -138,3 +138,20 @@ iterate_on <- function(on, action, verbose = TRUE) {
   return(vec_res)
 }
 
+
+find_monotonous <- function(df) {
+  col_count = ncol(df)
+  vec_mono_col = c()
+  for (ind in 1:col_count) {
+    col <- df[, ind]
+    
+    if (length(unique(col)) == 1) {
+      vec_mono_col = c(vec_mono_col, ind)
+    }
+  }
+  
+  return(
+    names(df)[vec_mono_col]
+  )
+}
+
