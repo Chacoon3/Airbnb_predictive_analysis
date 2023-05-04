@@ -46,19 +46,10 @@ prs_va = prs[-sampled]
 # codes start here ----------------------------
 
 
-length(x_test[,1])
 
-accuracy <- function(classifications, actuals){
-  correct_classifications <- ifelse(classifications == actuals, 1, 0)
-  acc <- sum(correct_classifications)/length(classifications)
-  return(acc)
-}
-summary(x_train)
 
 #data cleaning
-summary(x_test)
-
-
+#To build the input matrix of xgboost, I need to remove the character columns
 cleaning_test <- function(df){
   df <- df %>%
     mutate(bed_category = as.factor(bed_category),
@@ -131,16 +122,16 @@ cleaning_test <- function(df){
 te <-cleaning_test(x_test)
 tr <- cleaning_test(x_train)
 sapply(tr, is.character)
+
+colnames(tr)
+
 #create dummy teriables
 dummy_tr <- dummyVars(formula=~., data = tr,fullRank = TRUE)
-
 dummy_te <- dummyVars(formula=~., data = te,fullRank = TRUE) 
 tr <- predict(dummy_tr, newdata = tr)
 te <- predict(dummy_te, newdata = te)
 
-
-#############hbr##########################
-#split train and validation
+#split train and validation data sets
 train_insts = sample(nrow(tr), .7*nrow(tr))
 data_train <- tr[train_insts,]
 data_valid <- tr[-train_insts,]
@@ -148,137 +139,111 @@ y_train_hbr_1 <- ifelse(hbr == 'YES',1,0)
 y_train <- y_train_hbr_1[train_insts]
 y_valid <- y_train_hbr_1[-train_insts]
 
-#build model for hbr
-tree_depth = c(1:10,15,25,35,50,75)
-tr_auc = rep(0,length(tree_depth))
-va_auc = rep(0,length(tree_depth))
-#hbr_xgboost <- xgboost(data = data_train, label = y_train, nround = 50,objective = "reg:logistic")
-for (i in 1:length(tree_depth)){
-  hbr_xgboost <- xgboost(data = data_train, label = y_train, nround = 150, max_depth = tree_depth[i],objective = "reg:logistic")
-  #make prediction
-  y_train_pred <- predict(hbr_xgboost, newdata = data_train)
-  #calculate auc
-  auc_train <- get_auc( y_train_pred,y_train)
-  tr_auc[i] = auc_train
-  y_va_pred <- predict(hbr_xgboost, newdata = data_valid)
-#  classification_va <- ifelse(y_va_pred > .5, 1, 0)
-  auc_valid <- get_auc(y_va_pred, y_valid)
-  va_auc[i] = auc_valid}
-#get the max_depth with highest va acc
-tr_auc
-va_auc
-tree_depth[which.max(va_auc)]
-#auc = 0.9007877,tree_depth = 7
-###################set the nround#######################
-round = c(5,10,20,30,40,50,60,70,80,90,100,125,150,200)
-tr_auc = rep(0,length(round))
-va_auc = rep(0,length(round))
-for (i in 1:length(round)){
-  hbr_xgboost <- xgboost(data = data_train, label = y_train, nround = round[i], max_depth = 6,objective = "reg:logistic", eval_metric = "auc")
-  #make prediction
-  y_train_pred <- predict(hbr_xgboost, newdata = data_train)
-  #make prediction
-  y_train_pred <- predict(hbr_xgboost, newdata = data_train)
-  #calculate auc
-  auc_train <- get_auc( y_train_pred,y_train)
-  tr_auc[i] = auc_train
-  y_va_pred <- predict(hbr_xgboost, newdata = data_valid)
-  #  classification_va <- ifelse(y_va_pred > .5, 1, 0)
-  auc_valid <- get_auc(y_va_pred, y_valid)
-  va_auc[i] = auc_valid}
-
-#get the max_depth with highest va acc
-tr_auc
-va_auc
-round[which.max(va_auc)] # 150
-max(va_auc) #0.9007877
-
 
 #############change model evaluation metrics#############
-hbr_xgboost <- xgboost(data = data_train, label = y_train, nround = round[i], max_depth = 9,objective = "reg:logistic", eval_metric = "auc")
+#hbr_xgboost <- xgboost(data = data_train, label = y_train, nround = round[i], max_depth = 9,objective = "reg:logistic", eval_metric = "auc")
+
+
+#############set tree depth##########################
+
+#build model for hbr
+tree_depth = c(1:10,15,25,35,50,75)
+tree_depth_auc = rep(0,length(tree_depth))
+for (i in 1:length(tree_depth)){
+  hbr_xgboost <- xgboost(data = data_train, label = y_train, nround = 150, max_depth = tree_depth[i],objective = "reg:logistic",eval_metric = "auc")
+  #make prediction
+  y_va_pred <- predict(hbr_xgboost, newdata = data_valid)
+  auc_valid <- get_auc(y_va_pred, y_valid)
+  tree_depth_auc[i] = auc_valid}
+#get the max_depth with highest va acc
+#max(tree_depth_auc)
+#tree_depth[which.max(tree_depth_auc)]
+#auc = 0.9007877,tree_depth = 7
+
+###################set the nround#######################
+round = c(5,10,20,30,40,50,60,70,80,90,100,125,150,200)
+round_auc = rep(0,length(round))
+for (i in 1:length(round)){
+  hbr_xgboost <- xgboost(data = data_train, label = y_train, nround = round[i], 
+                         max_depth = tree_depth[which.max(tree_depth_auc)],objective = "reg:logistic", eval_metric = "auc")
+  #make prediction
+  y_va_pred <- predict(hbr_xgboost, newdata = data_valid)
+  #calculate auc
+  auc_valid <- get_auc(y_va_pred, y_valid)
+  round_auc[i] = auc_valid}
+
+#get the max_depth with highest va acc
+#round[which.max(round_auc)] # 150
+#max(round_auc) #0.9007877
 
 
 ###############choose objectives##############
 obj = c( 'binary:logistic','reg:linear')
-
-tr_auc = rep(0,length(obj))
-va_auc = rep(0,length(obj))
+obj_auc = rep(0,length(obj))
 for (i in 1:length(obj)){
-  hbr_xgboost <- xgboost(data = data_train, label = y_train, nround = 150, max_depth = 7,objective = obj[i])
-  #make prediction
-  y_train_pred <- predict(hbr_xgboost, newdata = data_train)
-  #make prediction
-  y_train_pred <- predict(hbr_xgboost, newdata = data_train)
-  #calculate auc
-  auc_train <- get_auc( y_train_pred,y_train)
-  tr_auc[i] = auc_train
+  hbr_xgboost <- xgboost(data = data_train, label = y_train, nround = round[which.max(round_auc)],
+                         max_depth =tree_depth[which.max(tree_depth_auc)],objective = obj[i], eval_metric = "auc")
   y_va_pred <- predict(hbr_xgboost, newdata = data_valid)
-  #  classification_va <- ifelse(y_va_pred > .5, 1, 0)
   auc_valid <- get_auc(y_va_pred, y_valid)
-  va_auc[i] = auc_valid}
+  obj_auc[i] = auc_valid}
 
-va_auc
+max(obj_auc)
+obj[which.max(obj_auc)]
 ###################set eta#################
 eta_set = c(0.05,0.1,0.15,0.2,0.25,0.3,0.35,0.4,0.5)
-tr_auc_eta = rep(0,length(eta_set))
 va_auc_eta = rep(0,length(eta_set))
 for (i in 1:length(eta_set)){
-  hbr_xgboost <- xgboost(data = data_train, label = y_train, nround = 150, max_depth = 6,objective = "reg:logistic", eval_metric = "auc",eta = eta_set[i])
+  hbr_xgboost <- xgboost(data = data_train, label = y_train, nround = round[which.max(round_auc)],
+                         max_depth = tree_depth[which.max(tree_depth_auc)],objective = obj[which.max(obj_auc)], 
+                         eval_metric = "auc",eta = eta_set[i])
   #make prediction
-  y_train_pred <- predict(hbr_xgboost, newdata = data_train)
-  #make prediction
-  y_train_pred <- predict(hbr_xgboost, newdata = data_train)
-  #calculate auc
-  auc_train <- get_auc( y_train_pred,y_train)
-  tr_auc_eta[i] = auc_train
   y_va_pred <- predict(hbr_xgboost, newdata = data_valid)
-  #  classification_va <- ifelse(y_va_pred > .5, 1, 0)
+  #calculate auc
   auc_valid <- get_auc(y_va_pred, y_valid)
   va_auc_eta[i] = auc_valid}
 
-va_auc_eta # max = 0.9007877
-eta_set[which.max(va_auc_eta)] #eta=0.25
+#va_auc_eta # max = 0.9007877
+#eta_set[which.max(va_auc_eta)] #eta=0.25
 
 #####################tuning gamma####################
 gm <- c(0,1,2,4,6,8,10,20)
-tr_auc_gm = rep(0,length(gm))
 va_auc_gm = rep(0,length(gm))
 for (i in 1:length(gm)){
-  hbr_xgboost <- xgboost(data = data_train, label = y_train, nround = 150, max_depth = 6,objective = "reg:logistic", eval_metric = "auc",eta = 0.25,gamma = gm[i])
-  #make prediction
-  y_train_pred <- predict(hbr_xgboost, newdata = data_train)
-  #calculate auc
-  auc_train <- get_auc( y_train_pred,y_train)
-  tr_auc_gm[i] = auc_train
+  hbr_xgboost <- xgboost(data_train, label = y_train, nround = round[which.max(round_auc)],
+                         max_depth = tree_depth[which.max(tree_depth_auc)],
+                         objective = obj[which.max(obj_auc)], eta = eta_set[which.max(va_auc_eta)],
+                         eval_metric = "auc",gamma = gm[i])
+# make prediction
   y_va_pred <- predict(hbr_xgboost, newdata = data_valid)
-  #  classification_va <- ifelse(y_va_pred > .5, 1, 0)
   auc_valid <- get_auc(y_va_pred, y_valid)
   va_auc_gm[i] = auc_valid}
-va_auc_gm # max = 0.8951530
-gm[which.max(va_auc_gm)] #gm=2
+#va_auc_gm # max = 0.8951530
+#gm[which.max(va_auc_gm)] #gm=2
 
-# 0.9007877
-hbr_xgboost <- xgboost(data = data_train, label = y_train, nround = 150, max_depth = 6,objective = "reg:logistic", eval_metric = "auc")
+
 ################tuning min_child_weight#################
 mcw = c(0,1,2,4,6,8,10)
-tr_auc_mcw = rep(0,length(mcw))
 va_auc_mcw = rep(0,length(mcw))
 for (i in 1:length(mcw)){
-  hbr_xgboost <- xgboost(data = data_train, label = y_train, nround = 150, max_depth = 6,objective = "reg:logistic", eval_metric = "auc",eta = 0.2,gamma = 2,min_child_weight=mcw[i])
-  #make prediction
-  y_train_pred <- predict(hbr_xgboost, newdata = data_train)
-  #calculate auc
-  auc_train <- get_auc( y_train_pred,y_train)
-  tr_auc_mcw[i] = auc_train
+  hbr_xgboost <- xgboost(data_train, label = y_train, nround = round[which.max(round_auc)],
+                         max_depth = tree_depth[which.max(tree_depth_auc)],
+                         objective = obj[which.max(obj_auc)], eta = eta_set[which.max(va_auc_eta)],
+                         eval_metric = "auc",gamma = gm[which.max(va_auc_gm)],min_child_weight=mcw[i])
   y_va_pred <- predict(hbr_xgboost, newdata = data_valid)
   #  classification_va <- ifelse(y_va_pred > .5, 1, 0)
   auc_valid <- get_auc(y_va_pred, y_valid)
   va_auc_mcw[i] = auc_valid}
-va_auc_mcw # max = 0.8955083
-mcw[which.max(va_auc_mcw)] #mcw = 8
-hbr_xgboost <-xgboost(data = data_train, label = y_train, objective = "reg:logistic", eval_metric = "auc",nrounds = 100)
-hbr_xgboost <- xgboost(data = data_train, label = y_train, nround = 150, max_depth = 6,objective = "reg:logistic", eval_metric = "auc",eta = 0.2,gamma = 2,min_child_weight=8)
+#va_auc_mcw # max = 0.8955083
+#mcw[which.max(va_auc_mcw)] #mcw = 8
 
+best_model <- xgboost(data_train, label = y_train, nround = round[which.max(round_auc)],
+                      max_depth = tree_depth[which.max(tree_depth_auc)],
+                      objective = obj[which.max(obj_auc)], eta = eta_set[which.max(va_auc_eta)],
+                      eval_metric = "auc",gamma = gm[which.max(va_auc_gm)],
+                      min_child_weight=mcw[which.max(va_auc_mcw)])
+
+summary(best_model)
+vip(best_model)
 ##################make predictions for test####################
 #colnames in test and train are different
 #Compare col names and get missing cols
@@ -320,7 +285,7 @@ max(y_te_pred)
 model <- xgb.dump(hbr_xgboost, with.stats = T)
 #compute feature importance matrix for selecting variables 
 importance_matrix <- xgb.importance(model = hbr_xgboost)
-
+nrow(importance_matrix)
 write.table(importance_matrix, "importance_matrix.csv")
 
 write.table(y_te_pred, "high_booking_rate_group5.csv", row.names = FALSE)
