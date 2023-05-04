@@ -86,6 +86,10 @@ feature_engineering_full_set <- function(df) {
 
 feature_engineering <- function(x) {
   
+  high_hotel_rate_city = x_full_set$city %in% c(
+    'new york', 'miami', 'chicago', 'las vegas', 'san fransisco'
+  )
+  
   res <- x %>%
     select(
       accommodates,
@@ -182,9 +186,11 @@ feature_engineering <- function(x) {
         log(),
       
       square_feet = 
-        ifelse(x$square_feet == 0, median(x$square_feet), x$square_feet)
+        ifelse(x$square_feet == 0, median(x$square_feet), x$square_feet),
       
-    )
+      high_hotel_rate_city = high_hotel_rate_city
+  )
+
   
   return(res)
 }
@@ -194,6 +200,7 @@ x <- x_full_set %>%
   feature_engineering_full_set() %>%
   feature_engineering()
 
+x$high_hotel_rate_city %>% summary()
 
 hbr <- y_train$high_booking_rate %>% as.factor()
 hbr <- ifelse(hbr == 'YES', 1, 0)
@@ -226,18 +233,18 @@ obj_test <- x_view %>%
     host_response_time = host_response_time %>% as.factor()
   ) %>%
   cbind(tar_fac) %>% 
-  group_by(state) %>%
+  group_by(high_hotel_rate_city) %>%
   mutate(
     inst_count = n()
   ) %>%
   ungroup() %>%
   filter(tar_fac == 'YES') %>%
-  group_by(state) %>%
+  group_by(high_hotel_rate_city) %>%
   mutate(
     p_count = n(),
     p_rate = p_count / inst_count
   ) %>%
-  select(state, inst_count, p_rate) %>%
+  select(high_hotel_rate_city, inst_count, p_rate) %>%
   arrange(inst_count) %>%
   distinct()
 
