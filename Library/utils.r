@@ -239,3 +239,60 @@ compare_feature <- function(feat_mutator, x, y, model) {
   
   
 }
+
+
+grid_search_xgb <- function(
+    x_tr, y_tr, x_va, y_va, 
+    tree_depth = c(5:10), 
+    round = c(50,75,100,125,150,200),
+    eta_set = c(0.2,0.25,0.3,0.4),
+    report_progress = T
+){
+  
+  #hyperparameters grid
+  tree_depth = c(5:10) 
+  round = c(50,75,100,125,150,200)
+  eta_set = c(0.2,0.25,0.3,0.4)
+  
+  #an empty dataframe to store auc
+  auc_df = data.frame(depth = c(0),
+                      nround = c(0),
+                      eta_set=c(0),
+                      auc = c(0))
+  
+  counter = 0
+  #nested loops to tune these three parameters
+  for(i in c(1:length(tree_depth))){
+    for(j in c(1:length(round))){
+      for(k in c(1:length(eta_set))){
+        thisdepth <- tree_depth[i]
+        thisnrounds <- round[j]
+        thiseta <- eta_set[k]
+        
+        inner_bst <- xgboost(
+          data = x_tr,
+          label = y_tr,
+          max.depth = thisdepth,
+          eta = thiseta, 
+          nrounds = thisnrounds,
+          objective = "binary:logistic",
+          eval_metric = "auc", 
+          verbose = F
+        )
+        
+        inner_bst_pred <- predict(inner_bst, x_va)
+        auc_valid <- get_auc(inner_bst_pred, y_va)
+        auc_df[nrow(auc_df)+1,] <- c(thisdepth,thisnrounds,thiseta,auc_valid)
+        
+      }
+      counter = counter + 1
+      if (report_progress) {
+        print(counter)
+      }
+    }
+  }
+  
+  return(auc_df)
+}
+
+
