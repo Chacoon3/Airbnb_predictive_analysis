@@ -10,7 +10,7 @@ library(glmnet)
 options(scipen = 999)
 # replace the string with the directory of the project folder "Data"
 # the original datasets MUST be placed under the Data folder for the following script to run correctly.
-folder_dir = r"(C:\Users\Chaconne\Documents\学业\Projects\Airbnb_predictive_analysis\Data)"
+folder_dir = r"(C:\Users\Chaconne\Documents\学业\Projects\Airbnb_predictive_analysis_copy\Data)"
 
 # read -----------------
 x_full_set <- get_cleaned(folder_dir, FALSE)
@@ -233,6 +233,41 @@ prs_tr = prs[sampled]
 prs_va = prs[-sampled]
 
 
+# feature comparing -----------------------
+x1 <- x_train %>%
+  select(!high_hotel_rate_city)
+d1 <- dummyVars(formula = ~., x1, fullRank = T)
+x1 <- predict(d1, x1)
+
+
+x2 <- x_train
+x2 <- predict(md_dummy, x2)
+
+
+df_cf = compare_feature(
+  x1, x2, prs, 
+  trainer = \(x, y) {
+    model <- ranger(x = x, y = y,
+                    mtry = 26, 
+                    max.depth = 10, # seemingly optimal
+                    num.trees=800,
+                    importance="impurity",
+                    probability = TRUE,
+                    verbose = F
+                    )
+    return(model)
+  },
+  predictor = \(model, x) {
+    pred = predict(model, data = x)$predictions[,2]
+    return(pred)
+  },
+  measurer = \(y1, y2) {
+    return(get_auc(y1, y2))
+  }
+)
+df_cf
+
+
 #view -----------------
 x_view <- x[1:nrow(y_train),]
 # feature of interest
@@ -240,7 +275,7 @@ foi <- x_view$state
 summary(foi) # useful
 boxplot(foi)
 
-summary(x_view$minimum_nights)
+
 tar_fac <- y_train$perfect_rating_score %>% as.factor()
 obj_test <- x_view %>%
   mutate(
@@ -270,8 +305,6 @@ boxplot(obj_test$inst_count)
 summary(obj_test$inst_count)
 hist(x$monthly_price)
 summary(x$price)
-
-
 
 
 # codes start here ----------------------------

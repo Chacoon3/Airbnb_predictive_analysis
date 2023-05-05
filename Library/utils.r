@@ -234,10 +234,51 @@ cross_val <- function(trainer, predictor, measurer, x, y, fold_count = 5) {
 }
 
 
-compare_feature <- function(feat_mutator, x, y, model) {
-  x_new_feats <- x %>% feat_mutator()
+compare_feature <- function(
+    x_def, x_feat, y, trainer,
+    predictor, measurer, n = 3, train_ratio = 0.75,
+    verbose = T) {
+
+  vec_measure_def = rep(0, n)
+  vec_measure_feat = rep(0, n)
+  x_row = nrow(x_def)
+  counter = 0
+  for (ind in 1:n) {
+    indice = sample(1:x_row, size = train_ratio * x_row)
+    x_tr_def = x_def[indice, ]
+    x_va_def = x_def[-indice, ]
+    y_tr = y[indice]
+    y_va = y[-indice]
+    x_tr_feat = x_feat[indice, ]
+    x_va_feat = x_feat[-indice, ]
+    
+    perf_def = trainer(x_tr_def, y_tr) %>%
+      predictor(x_va_def) %>%
+      measurer(y_va)
+    perf_feat = trainer(x_tr_feat, y_tr) %>%
+      predictor(x_va_feat) %>%
+      measurer(y_va)
+    
+    vec_measure_def[ind] = perf_def
+    vec_measure_feat[ind] = perf_feat
+    
+    counter = counter + 1
+    if (verbose) {
+      print(counter)
+    }
+  }
   
+  res = data.frame(
+    n = 1:n,
+    default_performance = vec_measure_def,
+    new_feature_performance = vec_measure_feat
+  )
+  res[nrow(res) + 1, ] = c('average', mean(vec_measure_def), mean(vec_measure_feat))
+  res[nrow(res) + 1, ] = c('best', max(vec_measure_def), max(vec_measure_feat))
+  res[nrow(res) + 1, ] = c('min', min(vec_measure_def), min(vec_measure_feat))
+  res[nrow(res) + 1, ] = c('variance', var(vec_measure_def), var(vec_measure_feat))
   
+  return(res)
 }
 
 
