@@ -243,16 +243,11 @@ compare_feature <- function(feat_mutator, x, y, model) {
 
 grid_search_xgb <- function(
     x_tr, y_tr, x_va, y_va, 
-    tree_depth = c(5:10), 
-    round = c(50,75,100,125,150,200),
-    eta_set = c(0.2,0.25,0.3,0.4),
+    vec_tree_depth, 
+    vec_nround,
+    vec_eta_set,
     report_progress = T
 ){
-  
-  #hyperparameters grid
-  tree_depth = c(5:10) 
-  round = c(50,75,100,125,150,200)
-  eta_set = c(0.2,0.25,0.3,0.4)
   
   #an empty dataframe to store auc
   auc_df = data.frame(depth = c(0),
@@ -262,12 +257,12 @@ grid_search_xgb <- function(
   
   counter = 0
   #nested loops to tune these three parameters
-  for(i in c(1:length(tree_depth))){
-    for(j in c(1:length(round))){
-      for(k in c(1:length(eta_set))){
-        thisdepth <- tree_depth[i]
-        thisnrounds <- round[j]
-        thiseta <- eta_set[k]
+  for(i in c(1:length(vec_tree_depth))){
+    for(j in c(1:length(vec_nround))){
+      for(k in c(1:length(vec_eta_set))){
+        thisdepth <- vec_tree_depth[i]
+        thisnrounds <- vec_nround[j]
+        thiseta <- vec_eta_set[k]
         
         inner_bst <- xgboost(
           data = x_tr,
@@ -294,5 +289,4 @@ grid_search_xgb <- function(
   
   return(auc_df)
 }
-
 

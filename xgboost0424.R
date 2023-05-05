@@ -4,10 +4,11 @@ source('Library//data_cleaning.r')
 source('Library//utils.r')
 library(xgboost)
 library(ranger)
+library(lubridate)
 
 # replace the string with the directory of the project folder "Data"
 # the original datasets MUST be placed under the Data folder for the following script to run correctly.
-folder_dir = r"(/Users/nuomihan/Desktop/758T group project)"
+folder_dir = r"(C:\Users\Chaconne\Documents\学业\Projects\Airbnb_predictive_analysis\Data)"
 
 
 
@@ -42,9 +43,7 @@ prs_tr = prs[sampled]
 prs_va = prs[-sampled]
 
 
-
 # codes start here ----------------------------
-
 
 
 
@@ -137,48 +136,14 @@ te <- predict(dummy_te, newdata = te)
 y_train_hbr_1 <- ifelse(hbr == 'YES',1,0)
 
 ############################nested loop for tuning parameter###############
-tree_depth = c(1:10,12,15)
-round = c(50,60,70,80,90,100,125,150,200)
-eta_set = c(0.05,0.1,0.15,0.2,0.25,0.3,0.35,0.4,0.5)
 
-grid_search <- function(){
-  
-  #hyperparameters grid
-  tree_depth = c(5:10)
-  round = c(50,75,100,125,150,200)
-  eta_set = c(0.2,0.25,0.3,0.4)
-  
-  #an empty dataframe to store auc
-  auc_df = data.frame(depth = c(0),
-                      nround = c(0),
-                      eta_set=c(0),
-                      auc = c(0))
-  
-  #nested loops to tune these three parameters
-  for(i in c(1:length(tree_depth))){
-    for(j in c(1:length(round))){
-      for(k in c(1:length(eta_set))){
-        thisdepth <- tree_depth[i]
-        thisnrounds <- round[j]
-        thiseta <- eta_set[k]
-        
-        inner_bst <- xgboost(data = train_fold, label = hbr_train_fold, max.depth = thisdepth, eta = thiseta, nrounds = thisnrounds,  objective = "binary:logistic", eval_metric = "auc")
-        
-        inner_bst_pred <- predict(inner_bst, valid_fold)
-        auc_valid <- get_auc(inner_bst_pred, hbr_valid_fold)
-        auc_df[nrow(auc_df)+1,] <- c(thisdepth,thisnrounds,thiseta,auc_valid)
-        
-      }
-    }
-  }
-}
 
 k=5
 fold_auc_df = data.frame(depth = rep(0,k),
                          nround = rep(0,k),
                          eta_set= rep(0,k),
                          auc = rep(0,k))
-
+grid_search_res = NULL
 for(i in 1:k){
   folds <- cut(seq(1,nrow(tr)),breaks=k,labels=FALSE)
   #Segment your data by fold using the which() function 
@@ -187,10 +152,21 @@ for(i in 1:k){
   hbr_valid_fold <- y_train_hbr_1[valid_inds]
   train_fold <- tr[-valid_inds, ]
   hbr_train_fold <- y_train_hbr_1[-valid_inds]
-  grid_search()
-  fold_auc_df[i,] = auc_df[order(auc_df$auc,decreasing = TRUE),][1,]
-  }
+  grid_search_res = grid_search_xgb(
+      x_tr = train_fold, 
+      y_tr = hbr_train_fold,
+      x_va = valid_fold,
+      y_va = hbr_valid_fold,
+      vec_tree_depth = 5:10,
+      vec_nround = 1:10 * 10,
+      vec_eta_set = c(0.2, 0.25, 0.3)
+    )
+  fold_auc_df[i,] = 
+    grid_search_res[order(grid_search_res$auc,decreasing = TRUE),][1,]
+  break
+}
 
+grid_search_res[order(grid_search_res$auc, decreasing = T), ]
 
 
 best_model <- xgboost()
