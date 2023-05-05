@@ -21,6 +21,55 @@ get_auc <- function(pred_y_prob, valid_y_factor) {
 }
 
 
+get_tpr <- function(pred_y_prob, valid_y_factor, cutoff = 0.5, p = 1, n = 0) {
+  total_p = sum(valid_y_factor == p)
+  pred = ifelse(pred_y_prob >= cutoff, p, n)
+  pred_tp = sum(pred == valid_y_factor & pred == p)
+  return(pred_tp / total_p)
+}
+
+
+get_fpr <- function(pred_y_prob, valid_y_factor, cutoff = 0.5, p = 1, n = 0) {
+  total_n = sum(valid_y_factor == n)
+  pred = ifelse(pred_y_prob >= cutoff, p, n)
+  pred_fp = sum(pred != valid_y_factor & pred == p)
+  return(pred_fp / total_n)
+}
+
+
+plot_roc_ggplot <- function(pred_y_prob, valid_y_factor, step_length = 0.01, p = 1, n = 0) {
+  
+  total_p = sum(valid_y_factor == p)
+  total_n = sum(valid_y_factor == n)
+  vec_tpr = c()
+  vec_fpr = c()
+  cutoff = 0 + step_length
+  while (cutoff <= 1) {
+      pred = ifelse(pred_y_prob >= cutoff, p, n)
+      
+      pred_tp = sum(pred == valid_y_factor & pred == p)
+      pred_fp = sum(pred != valid_y_factor & pred == p)
+      
+      tpr = pred_tp / total_p
+      fpr = pred_fp / total_n
+      
+      vec_tpr = c(vec_tpr, tpr)
+      vec_fpr = c(vec_fpr, fpr)
+      
+      cutoff = cutoff + step_length
+  }
+  
+  data <- data.frame(
+    tpr = vec_tpr,
+    fpr = vec_fpr
+  )
+  
+  return(
+    ggplot(data = data, aes(x = fpr, y = tpr)) +geom_line()
+  )
+}
+
+
 get_mode <- function(v) {
   uniqv <- unique(v)
   uniqv[which.max(tabulate(match(v, uniqv)))]
@@ -154,4 +203,39 @@ find_monotonous <- function(df) {
   return(
     names(df)[vec_mono_col]
   )
+}
+
+
+cross_val <- function(trainer, predictor, measurer, x, y, fold_count = 5) {
+
+  size = nrow(x)
+  folds <- cut(
+    1:size %>% sample(size = size), 
+    breaks = fold_count, 
+    labels = FALSE
+  )
+  
+  vec_measure = rep(0, fold_count)
+  for (ind in 1:fold_count) {
+    indice_tr = which(folds != ind, arr.ind = TRUE)
+    x_tr <- x[indice_tr, ]
+    y_tr <- y[indice_tr]
+    x_va <- x[-indice_tr, ]
+    y_va <- y[-indice_tr]
+    
+    
+    model <- trainer(x_tr, y_tr)
+    y_pred <- predictor(model, x_va)
+    m <- measurer(y_pred, y_va)
+    vec_measure[ind] = m
+  }
+  
+  return(vec_measure)
+}
+
+
+compare_feature <- function(feat_mutator, x, y, model) {
+  x_new_feats <- x %>% feat_mutator()
+  
+  
 }

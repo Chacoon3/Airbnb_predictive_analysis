@@ -175,14 +175,18 @@ feature_engineering <- function(x) {
       
       host_response_time = as.factor(x$host_response_time),
       
-      price = ifelse(price < 1, mean(price), price) %>% # this is to prevent -inf
+      price_per_person = x$price / ifelse(x$accommodates == 0, 1, x$accommodates),
+
+      ppp_ind = ifelse(price_per_person > median(price_per_person),1 , 0),
+      
+      price = ifelse(price < 1, 1, price) %>% # this is to prevent -inf
         log(), 
       
       price_per_sqfeet = x$price / 
         ifelse(x$square_feet == 0, median(x$square_feet), x$square_feet),
       
       monthly_price =
-        ifelse(x$monthly_price < 1, mean(x$monthly_price), x$monthly_price) %>%
+        ifelse(x$monthly_price < 1, 1, x$monthly_price) %>%
         log(),
       
       square_feet = 
@@ -200,7 +204,6 @@ x <- x_full_set %>%
   feature_engineering_full_set() %>%
   feature_engineering()
 
-x$high_hotel_rate_city %>% summary()
 
 hbr <- y_train$high_booking_rate %>% as.factor()
 hbr <- ifelse(hbr == 'YES', 1, 0)
@@ -218,6 +221,17 @@ x_te_dummy <- predict(md_dummy, x_test)
 nrow(x_train) == nrow(y_train)
 nrow(x_test) == 12205
 (length(hbr) == length(prs)) && (length(hbr) == nrow(y_train))
+
+
+# train-validation split -------------------------
+sampled = base::sample(1:nrow(x_train), 0.75 * nrow(x_train))
+x_tr_rf = x_tr_dummy[sampled, ]
+x_va_rf = x_tr_dummy[-sampled, ]
+hbr_tr = hbr[sampled]
+hbr_va = hbr[-sampled]
+prs_tr = prs[sampled]
+prs_va = prs[-sampled]
+
 
 #view -----------------
 x_view <- x[1:nrow(y_train),]
@@ -258,14 +272,6 @@ hist(x$monthly_price)
 summary(x$price)
 
 
-# train-validation split -------------------------
-sampled = base::sample(1:nrow(x_train), 0.8 * nrow(x_train))
-x_tr_rf = x_tr_dummy[sampled, ]
-x_va_rf = x_tr_dummy[-sampled, ]
-hbr_tr = hbr[sampled]
-hbr_va = hbr[-sampled]
-prs_tr = prs[sampled]
-prs_va = prs[-sampled]
 
 
 # codes start here ----------------------------
@@ -384,7 +390,8 @@ get_auc(y_pred_prob_hbr_ranger, hbr_va)
 # ranger prs ----------------------------
 # optimal num tree = 800, mtry = 26
 md_prs_ranger <- ranger(x = x_tr_rf, y = prs_tr,
-                           mtry=26, 
+                           mtry = 26, 
+                           max.depth = 24, # seemingly optimal
                            num.trees=800,
                            importance="impurity",
                            probability = TRUE)
@@ -392,8 +399,54 @@ y_pred_prob_prs_ranger <-
   predict(md_prs_ranger, data = x_va_rf)$predictions[,2]
 plot_roc(y_pred_prob_prs_ranger, prs_va)
 get_auc(y_pred_prob_prs_ranger, prs_va)
-# last 0.8131754 \\ 0.8049635
+plot_roc_2(y_pred_prob_prs_ranger, prs_va)
+# last 0.8131754 \\ 0.8049635 \\ 0.8144257 \\ 0.814458 \\ 
 # highest 0.8131754
+
+
+vec_auc_cv <- cross_val(
+  trainer = \(x, y) {
+    md <- ranger(
+        x = x, y = y,
+        mtry = 26, 
+        max.depth = 24, # seemingly optimal
+        num.trees=800,
+        importance="impurity",
+        probability = TRUE
+      )
+    return(md)
+  },
+  predictor = \(model, x) {
+    y_pred <- predict(model, data = x)$predictions[,2]
+    return(y_pred)
+  },
+  measurer = \(y_pred, y_va) {
+    return(get_auc(y_pred, y_va))
+  },
+  x = x_tr_dummy,
+  y = prs
+)
+vec_auc_cv
+
+
+vec_depth = (1:6) * 3 + 12
+vec_auc_by_depth = iterate_on(
+  on = vec_depth,
+  action = \(depth) {
+    md_prs <- ranger(
+      x = x_tr_rf, y = prs_tr,
+      mtry = 26, 
+      max.depth = depth,
+      num.trees=800,
+      importance="impurity",
+      probability = TRUE)
+    pred_prob = predict(md_prs, data = x_va_rf)$predictions[,2]
+    return(get_auc(pred_prob, prs_va))
+  },
+)
+vec_depth[which.max(vec_auc_by_depth)]
+vec_auc_by_depth
+
 
 df_cutoff <- get_cutoff_dataframe(y_pred_prob_prs_ranger, prs_va, 
                        level = c(0, 1),
