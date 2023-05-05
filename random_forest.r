@@ -265,7 +265,7 @@ df_cf = compare_feature(
     return(get_auc(y1, y2))
   }
 )
-
+df_cf
 
 
 #view -----------------
