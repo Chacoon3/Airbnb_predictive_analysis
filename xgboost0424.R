@@ -18,7 +18,7 @@ folder_dir = r"(/Users/nuomihan/Desktop/758T group project)"
 # read
 # x_train <- read.csv('Data\\x_train_clean.csv')
 # x_test <- read.csv('Data\\x_test_clean.csv')
-x <- get_cleaned(folder_dir)
+x <- get_cleaned(folder_dir, FALSE)
 y_train <- read.csv('Data/airbnb_train_y_2023.csv')
 hbr <- y_train$high_booking_rate %>% as.factor()
 prs <- y_train$perfect_rating_score %>% as.factor()
@@ -120,127 +120,80 @@ cleaning_test <- function(df){
   return(df)}
 
 te <-cleaning_test(x_test)
+
 tr <- cleaning_test(x_train)
+#check if there any character col
 sapply(tr, is.character)
 
 colnames(tr)
 
-#create dummy teriables
+#create dummy variables
 dummy_tr <- dummyVars(formula=~., data = tr,fullRank = TRUE)
 dummy_te <- dummyVars(formula=~., data = te,fullRank = TRUE) 
 tr <- predict(dummy_tr, newdata = tr)
 te <- predict(dummy_te, newdata = te)
 
-#split train and validation data sets
-train_insts = sample(nrow(tr), .7*nrow(tr))
-data_train <- tr[train_insts,]
-data_valid <- tr[-train_insts,]
+#convert hbr into 1-0 variable
 y_train_hbr_1 <- ifelse(hbr == 'YES',1,0)
-y_train <- y_train_hbr_1[train_insts]
-y_valid <- y_train_hbr_1[-train_insts]
 
-
-#############change model evaluation metrics#############
-#hbr_xgboost <- xgboost(data = data_train, label = y_train, nround = round[i], max_depth = 9,objective = "reg:logistic", eval_metric = "auc")
-
-
-#############set tree depth##########################
-
-#build model for hbr
-tree_depth = c(1:10,15,25,35,50,75)
-tree_depth_auc = rep(0,length(tree_depth))
-for (i in 1:length(tree_depth)){
-  hbr_xgboost <- xgboost(data = data_train, label = y_train, nround = 150, max_depth = tree_depth[i],objective = "reg:logistic",eval_metric = "auc")
-  #make prediction
-  y_va_pred <- predict(hbr_xgboost, newdata = data_valid)
-  auc_valid <- get_auc(y_va_pred, y_valid)
-  tree_depth_auc[i] = auc_valid}
-#get the max_depth with highest va acc
-#max(tree_depth_auc)
-#tree_depth[which.max(tree_depth_auc)]
-#auc = 0.9007877,tree_depth = 7
-
-###################set the nround#######################
-round = c(5,10,20,30,40,50,60,70,80,90,100,125,150,200)
-round_auc = rep(0,length(round))
-for (i in 1:length(round)){
-  hbr_xgboost <- xgboost(data = data_train, label = y_train, nround = round[i], 
-                         max_depth = tree_depth[which.max(tree_depth_auc)],objective = "reg:logistic", eval_metric = "auc")
-  #make prediction
-  y_va_pred <- predict(hbr_xgboost, newdata = data_valid)
-  #calculate auc
-  auc_valid <- get_auc(y_va_pred, y_valid)
-  round_auc[i] = auc_valid}
-
-#get the max_depth with highest va acc
-#round[which.max(round_auc)] # 150
-#max(round_auc) #0.9007877
-
-
-###############choose objectives##############
-obj = c( 'binary:logistic','reg:linear')
-obj_auc = rep(0,length(obj))
-for (i in 1:length(obj)){
-  hbr_xgboost <- xgboost(data = data_train, label = y_train, nround = round[which.max(round_auc)],
-                         max_depth =tree_depth[which.max(tree_depth_auc)],objective = obj[i], eval_metric = "auc")
-  y_va_pred <- predict(hbr_xgboost, newdata = data_valid)
-  auc_valid <- get_auc(y_va_pred, y_valid)
-  obj_auc[i] = auc_valid}
-
-max(obj_auc)
-obj[which.max(obj_auc)]
-###################set eta#################
+############################nested loop for tuning parameter###############
+tree_depth = c(1:10,12,15)
+round = c(50,60,70,80,90,100,125,150,200)
 eta_set = c(0.05,0.1,0.15,0.2,0.25,0.3,0.35,0.4,0.5)
-va_auc_eta = rep(0,length(eta_set))
-for (i in 1:length(eta_set)){
-  hbr_xgboost <- xgboost(data = data_train, label = y_train, nround = round[which.max(round_auc)],
-                         max_depth = tree_depth[which.max(tree_depth_auc)],objective = obj[which.max(obj_auc)], 
-                         eval_metric = "auc",eta = eta_set[i])
-  #make prediction
-  y_va_pred <- predict(hbr_xgboost, newdata = data_valid)
-  #calculate auc
-  auc_valid <- get_auc(y_va_pred, y_valid)
-  va_auc_eta[i] = auc_valid}
 
-#va_auc_eta # max = 0.9007877
-#eta_set[which.max(va_auc_eta)] #eta=0.25
+grid_search <- function(){
+  
+  #hyperparameters grid
+  tree_depth = c(5:10)
+  round = c(50,75,100,125,150,200)
+  eta_set = c(0.2,0.25,0.3,0.4)
+  
+  #an empty dataframe to store auc
+  auc_df = data.frame(depth = c(0),
+                      nround = c(0),
+                      eta_set=c(0),
+                      auc = c(0))
+  
+  #nested loops to tune these three parameters
+  for(i in c(1:length(tree_depth))){
+    for(j in c(1:length(round))){
+      for(k in c(1:length(eta_set))){
+        thisdepth <- tree_depth[i]
+        thisnrounds <- round[j]
+        thiseta <- eta_set[k]
+        
+        inner_bst <- xgboost(data = train_fold, label = hbr_train_fold, max.depth = thisdepth, eta = thiseta, nrounds = thisnrounds,  objective = "binary:logistic", eval_metric = "auc")
+        
+        inner_bst_pred <- predict(inner_bst, valid_fold)
+        auc_valid <- get_auc(inner_bst_pred, hbr_valid_fold)
+        auc_df[nrow(auc_df)+1,] <- c(thisdepth,thisnrounds,thiseta,auc_valid)
+        
+      }
+    }
+  }
+}
 
-#####################tuning gamma####################
-gm <- c(0,1,2,4,6,8,10,20)
-va_auc_gm = rep(0,length(gm))
-for (i in 1:length(gm)){
-  hbr_xgboost <- xgboost(data_train, label = y_train, nround = round[which.max(round_auc)],
-                         max_depth = tree_depth[which.max(tree_depth_auc)],
-                         objective = obj[which.max(obj_auc)], eta = eta_set[which.max(va_auc_eta)],
-                         eval_metric = "auc",gamma = gm[i])
-# make prediction
-  y_va_pred <- predict(hbr_xgboost, newdata = data_valid)
-  auc_valid <- get_auc(y_va_pred, y_valid)
-  va_auc_gm[i] = auc_valid}
-#va_auc_gm # max = 0.8951530
-#gm[which.max(va_auc_gm)] #gm=2
+k=5
+fold_auc_df = data.frame(depth = rep(0,k),
+                         nround = rep(0,k),
+                         eta_set= rep(0,k),
+                         auc = rep(0,k))
+
+for(i in 1:k){
+  folds <- cut(seq(1,nrow(tr)),breaks=k,labels=FALSE)
+  #Segment your data by fold using the which() function 
+  valid_inds <- which(folds==i,arr.ind=TRUE)
+  valid_fold <- tr[valid_inds, ]
+  hbr_valid_fold <- y_train_hbr_1[valid_inds]
+  train_fold <- tr[-valid_inds, ]
+  hbr_train_fold <- y_train_hbr_1[-valid_inds]
+  grid_search()
+  fold_auc_df[i,] = auc_df[order(auc_df$auc,decreasing = TRUE),][1,]
+  }
 
 
-################tuning min_child_weight#################
-mcw = c(0,1,2,4,6,8,10)
-va_auc_mcw = rep(0,length(mcw))
-for (i in 1:length(mcw)){
-  hbr_xgboost <- xgboost(data_train, label = y_train, nround = round[which.max(round_auc)],
-                         max_depth = tree_depth[which.max(tree_depth_auc)],
-                         objective = obj[which.max(obj_auc)], eta = eta_set[which.max(va_auc_eta)],
-                         eval_metric = "auc",gamma = gm[which.max(va_auc_gm)],min_child_weight=mcw[i])
-  y_va_pred <- predict(hbr_xgboost, newdata = data_valid)
-  #  classification_va <- ifelse(y_va_pred > .5, 1, 0)
-  auc_valid <- get_auc(y_va_pred, y_valid)
-  va_auc_mcw[i] = auc_valid}
-#va_auc_mcw # max = 0.8955083
-#mcw[which.max(va_auc_mcw)] #mcw = 8
 
-best_model <- xgboost(data_train, label = y_train, nround = round[which.max(round_auc)],
-                      max_depth = tree_depth[which.max(tree_depth_auc)],
-                      objective = obj[which.max(obj_auc)], eta = eta_set[which.max(va_auc_eta)],
-                      eval_metric = "auc",gamma = gm[which.max(va_auc_gm)],
-                      min_child_weight=mcw[which.max(va_auc_mcw)])
+best_model <- xgboost()
 
 summary(best_model)
 vip(best_model)
