@@ -279,7 +279,7 @@ dc_jingruo <- function(df) {
     df[,i] <- str_detect(df$amenities, i)
   }
   #drop the original amemtities row
-  df$amenities <- NULL
+  # df$amenities <- NULL
   
   #get the name and frequency of each verification
   verifications <- df$host_verifications %>% 
