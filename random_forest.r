@@ -234,23 +234,30 @@ prs_va = prs[-sampled]
 
 
 # feature comparing -----------------------
-x1 <- x_train %>%
-  select(!high_hotel_rate_city)
+x1 <- x_train
+
 d1 <- dummyVars(formula = ~., x1, fullRank = T)
 x1 <- predict(d1, x1)
 
 
-x2 <- x_train
+x2 <- x_train %>% 
+  mutate(
+    availability_30 = case_when(
+      availability_30 >= 27 ~ '>=27',
+      availability_30 >= 1 ~ '>=1',
+      TRUE ~ '0'
+    ) %>% as.factor()
+  )
 x2 <- predict(md_dummy, x2)
 
 
 df_cf = compare_feature(
   x1, x2, prs, 
   trainer = \(x, y) {
-    model <- ranger(x = x, y = y,
+    model <- ranger(x = x, y = y %>% as.factor(),
                     mtry = 26, 
                     max.depth = 10, # seemingly optimal
-                    num.trees=800,
+                    num.trees=600,
                     importance="impurity",
                     probability = TRUE,
                     verbose = F
@@ -271,10 +278,28 @@ df_cf
 #view -----------------
 x_view <- x[1:nrow(y_train),]
 # feature of interest
-foi <- x_view$state
+foi <- x_view$host_since
 summary(foi) # useful
 boxplot(foi)
 
+min_date = x$host_since %>% min()
+diff_host_since = difftime(x_train$host_since, min_date, units= 'days') %>%
+  as.numeric()
+summary(diff_host_since)
+
+hs_year = x_train$host_since %>% format('%Y')
+
+cut_host_since = cut(diff_host_since, 1:10 / 10 * max(diff_host_since))
+
+x_for_view = x_train
+x_for_view$diff_host_since = diff_host_since
+x_for_view$cut_host_since = cut_host_since
+x_for_view$hs_year = hs_year
+x_for_view$prs = prs
+x_for_view$hbr = hbr
+
+table(x_for_view$hs_year,x_for_view$prs) %>%
+  prop.table()
 
 tar_fac <- y_train$perfect_rating_score %>% as.factor()
 obj_test <- x_view %>%
@@ -282,19 +307,21 @@ obj_test <- x_view %>%
     host_response_time = host_response_time %>% as.factor()
   ) %>%
   cbind(tar_fac) %>% 
-  group_by(high_hotel_rate_city) %>%
+  group_by(availability_30) %>%
   mutate(
     inst_count = n()
   ) %>%
   ungroup() %>%
-  filter(tar_fac == 'YES') %>%
-  group_by(high_hotel_rate_city) %>%
+  # filter(tar_fac == 'YES') %>%
+  group_by(availability_30) %>%
   mutate(
-    p_count = n(),
-    p_rate = p_count / inst_count
+    p_count = sum(tar_fac == 'YES'),
+    n_count = sum(tar_fac != 'YES'),
+    p_rate = p_count / inst_count,
+    n_rate = n_count / inst_count
   ) %>%
-  select(high_hotel_rate_city, inst_count, p_rate) %>%
-  arrange(inst_count) %>%
+  select(availability_30, inst_count, p_rate, n_rate) %>%
+  arrange(availability_30) %>%
   distinct()
 
 
@@ -375,21 +402,44 @@ ggplot(
 
 # xgb prs ----------------------------
 md_prs_xgb <- xgboost(
-  data = as.matrix(x_tr_rf_dummy),
-  label = prs_tr_dummy,
-  nrounds = 2000,
-  print_every_n = 100,
+  data = x_tr_rf,
+  label = prs_tr,
+  max.depth = 6,
+  eta = 0.2,
+  nrounds = 600,
+  verbose = F,
   objective = 'binary:logistic',
   eval_metric = "auc"
 )
-y_pred_prob_xgb <- predict(md_prs_xgb, newdata = x_va_rf_dummy)
+y_pred_prob_xgb <- predict(md_prs_xgb, newdata = x_va_rf)
 plot_roc(y_pred_prob_xgb, prs_va)
 get_auc(y_pred_prob_xgb, prs_va)
 
 get_cutoff_dataframe(y_pred_prob_xgb, prs_va_dummy, level = c(0,1)) %>%
   plot_cutoff_dataframe()
-# 0.7906043
+# 0.8097067
 
+
+# xgb hbr ----------------------------
+md_hbr_xgb <- xgboost(
+  data = x_tr_rf,
+  label = hbr_tr,
+  max.depth = 6,
+  eta = 0.2,
+  nrounds = 600,
+  verbose = F,
+  objective = 'binary:logistic',
+  eval_metric = "auc"
+)
+hbr_prob_xgb <- predict(md_hbr_xgb, newdata = x_va_rf)
+plot_roc(hbr_prob_xgb, hbr_va)
+get_auc(hbr_prob_xgb, hbr_va)
+# 0.8995104
+
+vip(md_hbr_xgb)
+
+get_cutoff_dataframe(y_pred_prob_xgb, prs_va_dummy, level = c(0,1)) %>%
+  plot_cutoff_dataframe()
 
 
 # rf ----------------------------
@@ -410,14 +460,42 @@ get_auc(y_pred_rf[,2], prs_va)
 
 # ranger hbr ---------------------------------
 md_hbr_ranger <- ranger(x = x_tr_rf, y = hbr_tr,
-                 mtry=26, num.trees=800,
+                 mtry=26, num.trees=600,
                  importance="impurity",
                  probability = TRUE)
-y_pred_prob_hbr_ranger <- 
+hbr_prob_ranger <- 
   predict(md_hbr_ranger, data = x_va_rf)$predictions[,2]
-plot_roc(y_pred_prob_hbr_ranger, hbr_va)
-get_auc(y_pred_prob_hbr_ranger, hbr_va)
+plot_roc(hbr_prob_ranger, hbr_va)
+get_auc(hbr_prob_ranger, hbr_va)
+
+vip(md_hbr_ranger)
 # 0.8733637 \\ 0.873 \\ 0.8663719 \\ 0.8788666
+
+
+hbr_ranger_vec_search = vec_search(
+  vec_param = 10:16 * 2,
+  x = x_tr_dummy,
+  y = hbr %>% as.factor(),
+  trainer = \(x,y,param) {
+    model = ranger(
+        x = x, y = y,
+        mtry=param, num.trees=600,
+        importance="impurity",
+        probability = TRUE
+      )
+    return(model)
+  },
+  predictor = \(model, x) {
+    pred = predict(model, data = x)$predictions[,2]
+    return(pred)
+  },
+  measurer = \(y1, y2) {
+    auc = get_auc(y1, y2)
+    return(auc)
+  },
+  train_ratio = 0.78
+)
+hbr_ranger_vec_search[order(hbr_ranger_vec_search$measurement, decreasing = T),]
 
 
 # ranger prs ----------------------------
@@ -534,9 +612,9 @@ ggplot(
 
 
 
-# logistic lasso ------------------
+# lasso prs ------------------
 # best lambda appears to be 10^-7
-vec_lasso_lambda = seq(from = 10^-7, to = 2, length.out = 100)
+vec_lasso_lambda = seq(from = 10^-7, to = 1, length.out = 100)
 vec_lass_auc <- iterate_on(
   on = vec_lasso_lambda,
   action = \(param) {
@@ -554,19 +632,23 @@ vec_lass_auc <- iterate_on(
     )
   },
   
-  verbose = FALSE
+  verbose = F
 )
+vec_lasso_lambda[which.max(vec_lass_auc)]
+max(vec_lass_auc)
+
 
 logistic_lasso_prs <- glmnet(
   x = x_tr_rf, 
   y = prs_tr,
-  lambda = 10^-7, 
+  lambda = vec_lasso_lambda[which.max(vec_lass_auc)], 
   alpha = 0,
   family="binomial"
 )
 
 pred_prob <- predict(logistic_lasso_prs, newx = x_va_rf, type = "response")
 get_auc(pred_prob, prs_va)
+vip(logistic_lasso_prs, num_features = 25)
 
 ggplot(
   data = data.frame(

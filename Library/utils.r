@@ -236,7 +236,7 @@ cross_val <- function(trainer, predictor, measurer, x, y, fold_count = 5) {
 
 compare_feature <- function(
     x_def, x_feat, y, trainer,
-    predictor, measurer, n = 3, train_ratio = 0.75,
+    predictor, measurer, n = 3, train_ratio = 0.7,
     verbose = T) {
 
   vec_measure_def = rep(0, n)
@@ -329,5 +329,99 @@ grid_search_xgb <- function(
   }
   
   return(auc_df)
+}
+
+
+# hyperparameter tuning with a vector of hyperpamameter
+vec_search <- function(
+    vec_param, x, y,
+    trainer, predictor, measurer,
+    verbose = T,
+    train_ratio = 0.75,
+    cv_folds = 0) {
+  
+  
+  x_row = nrow(x)
+  vec_measure = c()
+  for (ind in 1:length(vec_param)) {
+    
+    if (cv_folds <= 0) {
+      indice_tr = sample(1:x_row, train_ratio * x_row)
+      x_tr = x[indice_tr, ]
+      x_va = x[-indice_tr, ]
+      y_tr = y[indice_tr]
+      y_va = y[-indice_tr]
+      
+      param = vec_param[ind]
+      model = trainer(x_tr, y_tr, param)
+      pred = predictor(model, x_va)
+      meas = measurer(pred, y_va)
+      
+      vec_measure = c(vec_measure, meas)
+    }
+    else {
+      vec_m = cross_val(
+        trainer, predictor, measurer,
+        x, y, cv_folds
+      )
+      
+      m = mean(vec_m)
+      vec_measure = c(vec_measure, m)
+    }
+    
+    if (verbose) {
+      print(
+        paste('round ', ind, ' completed')
+      )
+    }
+  }
+  data = data.frame(
+    param = vec_param,
+    measurement = vec_measure
+  )
+  return(data)
+}
+
+
+# hyperparameter tuning with two vectors of hyperpamameter
+mat_search <- function(
+      vec_param1, vec_param2, x, y,
+      trainer, predictor, measurer,
+      verbose = T,
+      train_ratio = 0.75
+) {
+  
+  x_row = nrow(x)
+  vec_measure = c()
+  res = data.frame(param1 = c(), param2 = c(), measurement = c())
+  
+  for (ind in 1:length(vec_param1)) {
+    param1 = vec_param1[ind]
+    
+    for (ind2 in 1:length(vec_param2)) {
+      param2 = vec_param2[ind]
+      
+      indice_tr = sample(1:x_row, train_ratio * x_row)
+      x_tr = x[indice_tr, ]
+      x_va = x[-indice_tr, ]
+      y_tr = y[indice_tr]
+      y_va = y[-indice_tr]
+      
+      model = trainer(x_tr, y_tr, param1, param2)
+      pred = predictor(model, x_va)
+      meas = measurer(pred, y_va)
+      
+      
+      res[nrow(res) + 1, ] = c(param1, param2, meas)
+      
+      if (verbose) {
+        print(
+          paste('round ', ind, ' completed')
+        )
+      }
+    }
+  }
+  
+  return(res)
 }
 
