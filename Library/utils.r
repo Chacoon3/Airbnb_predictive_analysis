@@ -1,6 +1,18 @@
 library(ROCR)
 
 
+get_baseline_accuracy <- function(y, n = 0, p = 1) {
+  sum_n = sum(y == n)
+  sum_p = sum(y == p)
+  total = length(y)
+  if (sum_n > sum_p) {
+    return(sum_n / total)
+  }
+  else{
+    return(sum_p / total)
+  }
+}
+
 # plot the roc graph
 plot_roc <- function(pred_y_prob, valid_y_factor)  {
   pred_obj = prediction(pred_y_prob, valid_y_factor)
@@ -490,3 +502,59 @@ mat_search <- function(
   return(res)
 }
 
+
+get_dtm <- function(
+    text_col, 
+    ngram = c(1L, 2L), 
+    doc_prop_min = 0,
+    doc_prop_max = 1,
+    tf_idf = T
+) {
+  
+  # inner function
+  replace_punctuations <- function(text_col) {
+    textcol <- text_col %>% gsub(
+      pattern = r"(\{|\}|")",
+      replacement = ''
+    ) %>%
+      gsub(
+        pattern = ',',
+        replacement = ' '
+      )
+  }
+  
+  
+  itoken_data = itoken(
+    text_col,
+    progressbar = F,
+    tokenizer = \(v) {
+      v %>%
+        tolower %>% # to lower
+        removeNumbers %>% #remove all numbers
+        replace_punctuations %>% #remove all punctuation
+        removePunctuation %>%
+        removeWords(tm::stopwords(kind="en")) %>% #remove stopwords
+        stemDocument %>% # stemming 
+        word_tokenizer 
+    }
+  )
+  
+  vocab_data = itoken_data %>%
+    create_vocabulary(
+      ngram = ngram
+    ) %>%
+    prune_vocabulary(
+      doc_proportion_min = 0.05,
+      doc_proportion_max = 0.8
+    )
+  
+  obj_vectorizer <- vocab_vectorizer(vocab_data)
+  dtm_data = create_dtm(itoken_data, obj_vectorizer)
+  
+  if (tf_idf) {
+    tfidf = TfIdf$new()
+    dtm_data = mlapi::fit_transform(x = dtm_data, model = tfidf)
+  }
+  
+  return(dtm_data)
+}

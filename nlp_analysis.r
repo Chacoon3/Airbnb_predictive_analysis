@@ -15,7 +15,7 @@ library(quanteda)
 library(glmnet)
 library(ranger)
 
-
+# read
 folder_dir = r"(C:\Users\Chaconne\Documents\学业\Projects\Airbnb_predictive_analysis_copy\Data)"
 x <- get_cleaned(folder_dir, F)
 wd <- getwd()
@@ -31,64 +31,10 @@ y_train <- y_train %>%
 setwd(wd)
 
 
-get_dtm <- function(
-    text_col, 
-    ngram = c(1L, 2L), 
-    doc_prop_min = 0,
-    doc_prop_max = 1,
-    tf_idf = T
-    ) {
-  
-  # inner function
-  replace_punctuations <- function(text_col) {
-    textcol <- text_col %>% gsub(
-      pattern = r"(\{|\}|")",
-      replacement = ''
-    ) %>%
-      gsub(
-        pattern = ',',
-        replacement = ' '
-      )
-  }
-  
-  
-  itoken_data = itoken(
-    text_col,
-    progressbar = F,
-    tokenizer = \(v) {
-      v %>%
-        tolower %>% # to lower
-        removeNumbers %>% #remove all numbers
-        replace_punctuations %>% #remove all punctuation
-        removePunctuation %>%
-        removeWords(tm::stopwords(kind="en")) %>% #remove stopwords
-        stemDocument %>% # stemming 
-        word_tokenizer 
-    }
-  )
-  
-  vocab_data = itoken_data %>%
-    create_vocabulary(
-      ngram = ngram
-    ) %>%
-    prune_vocabulary(
-      doc_proportion_min = 0.05,
-      doc_proportion_max = 0.8
-    )
-  
-  obj_vectorizer <- vocab_vectorizer(vocab_data)
-  dtm_data = create_dtm(itoken_data, obj_vectorizer)
-  
-  if (tf_idf) {
-    tfidf = TfIdf$new()
-    dtm_data = mlapi::fit_transform(x = dtm_data, model = tfidf)
-  }
-  
-  return(dtm_data)
-}
-
-
 train_length = nrow(y_train)
+
+
+# amenities dtm
 dtm <- get_dtm(x$amenities, ngram = c(1L,2L))
 dtm_train = dtm[1:train_length, ]
 dtm_te = dtm[(train_length + 1): nrow(dtm), ]
@@ -101,6 +47,7 @@ y_tr = y_train$high_booking_rate[ind_sample]
 y_va = y_train$high_booking_rate[-ind_sample]
 
 
+# access dtm
 dtm_access <- get_dtm(x$access)
 dtm_access_train = dtm_access[1:train_length, ]
 dtm_access_te = dtm_access[(train_length + 1): nrow(dtm), ]
@@ -109,6 +56,19 @@ dtm_access_te = dtm_access[(train_length + 1): nrow(dtm), ]
 ind_sample = sample(1:train_length, size = 0.75 * train_length)
 dtm_access_tr = dtm_access_train[ind_sample, ]
 dtm_access_va = dtm_access_train[-ind_sample, ]
+y_tr = y_train$high_booking_rate[ind_sample]
+y_va = y_train$high_booking_rate[-ind_sample]
+
+
+# description dtm
+dtm_desc <- get_dtm(x$description)
+dtm_desc_train = dtm_desc[1:train_length, ]
+dtm_desc_te = dtm_desc[(train_length + 1): nrow(dtm), ]
+
+
+ind_sample = sample(1:train_length, size = 0.75 * train_length)
+dtm_desc_tr = dtm_desc_train[ind_sample, ]
+dtm_desc_va = dtm_desc_train[-ind_sample, ]
 y_tr = y_train$high_booking_rate[ind_sample]
 y_va = y_train$high_booking_rate[-ind_sample]
 
@@ -128,8 +88,9 @@ vip(md, 35)
 
 
 # logistic access ----------------------
+# lambda 0 appears to be optimal for alpha = 1
 lambda_search <- vec_search(
-  vec_param = seq(10^-20, 10&-10, length.out = 100),
+  vec_param = 0,
   x = dtm_access_train, y = y_train$high_booking_rate,
   trainer = \(x, y, param) {
     md <- glmnet(
@@ -150,7 +111,7 @@ lambda_search <- vec_search(
     )
   } 
 )
-lambda_search[order(lambda_search$measurement, decreasing = T), ]
+lambda_search[order(lambda_search$measurement, decreasing = T), ][1:5,]
 
 
 md <- glmnet(
@@ -195,3 +156,17 @@ vec_doc_min_prop
 for (ind in 1:length(vec_doc_min_prop)) {
   
 }
+
+
+
+# logistic description ---------------------
+md <- glmnet(
+  x = dtm_desc_tr, y = y_tr,
+  family = 'binomial',
+  alpha = 1,
+  lambda = 10^-7
+)
+
+pred <- predict(md, newx = dtm_desc_va, type = 'response')
+get_auc(pred, y_va)
+vip(md, 35)
