@@ -266,19 +266,25 @@ find_monotonous <- function(df) {
 
 
 cross_val <- function(trainer, predictor, measurer, x, y, fold_count = 5) {
+  if (nrow(x) != length(y)) {
+    stop(
+      "input x and y should be of the same number of rows!"
+    )
+  }
 
   size = nrow(x)
   folds <- cut(
     1:size %>% sample(size = size), 
     breaks = fold_count, 
-    labels = FALSE
+    labels = F
   )
   
   vec_measure = rep(0, fold_count)
   for (ind in 1:fold_count) {
-    indice_tr = which(folds != ind, arr.ind = TRUE)
+    indice_tr = which(folds != ind, arr.ind = T)
     x_tr <- x[indice_tr, ]
     y_tr <- y[indice_tr]
+    
     x_va <- x[-indice_tr, ]
     y_va <- y[-indice_tr]
     
