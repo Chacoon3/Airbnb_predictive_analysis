@@ -13,7 +13,7 @@ folder_dir = r"(C:\Users\quinc\OneDrive - University of Maryland\My Drive\Colleg
 
 
 # read
-x_full_set <- get_cleaned(folder_dir)
+x_full_set <- get_cleaned(folder_dir, FALSE)
 
 y_train <- read.csv('Data\\airbnb_train_y_2023.csv')
 
