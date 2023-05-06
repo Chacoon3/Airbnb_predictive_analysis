@@ -70,6 +70,65 @@ plot_roc_ggplot <- function(pred_y_prob, valid_y_factor, step_length = 0.01, p =
 }
 
 
+get_learning_curve_data <- function(
+    x, y, trainer, predictor, measurer, vec_train_ratio = 1:18 /20, heldout_ratio = 0.2) {
+  
+  x_row = nrow(x)
+  indice_use = sample(1:x_row, (1 - heldout_ratio) * x_row)
+  x_use = x[indice_use, ]
+  x_ho = x[-indice_use, ]
+  y_use = y[indice_use]
+  y_ho = y[-indice_use]
+  
+  x_use_row = nrow(x_use)
+  vec_sample_size = c()
+  vec_meas = c()
+  for (ind in 1:length(vec_train_ratio)) {
+    # sampling
+    ratio = vec_train_ratio[ind]
+    sample_size = ratio * x_tr_row
+    indice_tr = sample(1:x_tr_row, sample_size)
+    x_tr = x_use[indice_tr, ]
+    y_tr = y_use[indice_tr]
+    vec_sample_size = c(vec_sample_size, sample_size)
+    
+    # train -> predict -> measure
+    model = trainer(x_tr, y_tr)
+    pred = predictor(model, x_ho)
+    score = measurer(pred, y_ho)
+    
+    # store measurement
+    vec_meas = c(vec_meas, score)
+  }
+  
+  data_for_plot = data.frame(
+    sample_size = vec_sample_size,
+    performance = vec_meas
+  )
+  
+  return(data_for_plot)
+}
+
+
+plot_learning_curve <- function(
+      x, y, 
+      trainer, predictor, measurer, 
+      vec_train_ratio = 1:18 /20, heldout_ratio = 0.2
+) {
+  data = get_learning_curve_data(
+      x,y, trainer, predictor, measurer,
+      vec_train_ratio, heldout_ratio
+    )
+  
+  return(
+    ggplot2::ggplot(
+        data = data,
+        aes(x = data[1, ], y = data[2, ])
+      ) + geom_line()
+  )
+}
+
+
 get_mode <- function(v) {
   uniqv <- unique(v)
   uniqv[which.max(tabulate(match(v, uniqv)))]
