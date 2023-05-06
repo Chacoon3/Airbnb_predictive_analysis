@@ -153,20 +153,24 @@ for(i in 1:k){
   train_fold <- tr[-valid_inds, ]
   hbr_train_fold <- y_train_hbr_1[-valid_inds]
   grid_search_res = grid_search_xgb(
-      x_tr = train_fold, 
-      y_tr = hbr_train_fold,
-      x_va = valid_fold,
-      y_va = hbr_valid_fold,
-      vec_tree_depth = 5:10,
-      vec_nround = 1:10 * 10,
-      vec_eta_set = c(0.2, 0.25, 0.3)
-    )
+    x_tr = train_fold, 
+    y_tr = hbr_train_fold,
+    x_va = valid_fold,
+    y_va = hbr_valid_fold,
+    vec_tree_depth = 5:9,
+    vec_nround = 2:10 * 100,
+    vec_eta_set = 0.2
+  )
   fold_auc_df[i,] = 
     grid_search_res[order(grid_search_res$auc,decreasing = TRUE),][1,]
   break
 }
 
 grid_search_res[order(grid_search_res$auc, decreasing = T), ]
+# depth nround eta_set       auc
+# 6      5    600     0.2 0.9059210
+# 14     6    500     0.2 0.9057336
+# 44     9    800     0.2 0.9057282
 
 
 best_model <- xgboost()
