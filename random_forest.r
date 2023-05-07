@@ -479,7 +479,8 @@ hbr_ranger_vec_search = vec_search(
   trainer = \(x,y,param) {
     model = ranger(
         x = x, y = y,
-        mtry=param, num.trees=600,
+        mtry=param, 
+        num.trees=600,
         importance="impurity",
         probability = TRUE
       )

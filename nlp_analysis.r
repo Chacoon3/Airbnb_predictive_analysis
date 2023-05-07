@@ -43,13 +43,21 @@ get_baseline_accuracy(y_train$perfect_rating_score)
 get_baseline_accuracy(y_train$high_booking_rate)
 summary(y_train$perfect_rating_score)
 summary(y_train$high_booking_rate)
-
+25/ 74
 
 # create dtm -------------------
 # amenities dtm
 dtm_am <- get_dtm(x$amenities, tf_idf = F)
 dtm_am_train = dtm_am[1:train_length, ]
 dtm_am_te = dtm_am[(train_length + 1): nrow(dtm_am), ]
+
+
+dtm_am_pruned <- get_dtm(
+    x$amenities, tf_idf = T,
+    doc_prop_min = 0.01, doc_prop_max = 0.7
+  )
+dtm_am_pruned_train = dtm_am_pruned[1:train_length, ]
+dtm_am_pruned_te = dtm_am_pruned[(train_length + 1): nrow(dtm_am_pruned), ]
 
 
 # access dtm
@@ -112,9 +120,18 @@ ind_sample = sample(1:train_length, size = 0.75 * train_length)
 
 y_tr = y_train$high_booking_rate[ind_sample]
 y_va = y_train$high_booking_rate[-ind_sample]
+hbr_tr = y_train$high_booking_rate[ind_sample]
+hbr_va = y_train$high_booking_rate[-ind_sample]
+prs_tr = y_train$perfect_rating_score[ind_sample]
+prs_va = y_train$perfect_rating_score[-ind_sample]
+
 
 dtm_am_tr = dtm_am_train[ind_sample, ]
 dtm_am_va = dtm_am_train[-ind_sample, ]
+
+dtm_am_pr_tr = dtm_am_pruned_train[ind_sample, ]
+dtm_am_pr_va = dtm_am_pruned_train[-ind_sample, ]
+
 
 dtm_access_tr = dtm_access_train[ind_sample, ]
 dtm_access_va = dtm_access_train[-ind_sample, ]
@@ -146,13 +163,16 @@ dtm_hv_va = dtm_hv_train[-ind_sample, ]
 
 
 
-# logistic amenities ---------------------
+# regularized logistic amenities ---------------------
 # better without tf-idf
 md <- glmnet(
-  x = dtm_am_tr, y = y_tr,
+  x = dtm_am_tr, y = hbr_tr,
+  weights = ifelse(hbr_tr == 1, 2.5, 1),
   family = 'binomial',
   alpha = 1,
-  lambda = 0.001
+  lambda = 0.001,
+  parallel = T,
+  trace.it = T
 )
 
 pred <- predict(md, newx = dtm_am_va, type = 'response')
@@ -185,12 +205,15 @@ lambda_search[order(lambda_search$measurement, decreasing = T), ][1:5,]
 # 0.001 optimal
 
 
+
+
 # ranger amenities ---------------
 md <- ranger(
   x = dtm_am_tr, y = y_tr %>% as.factor(),
   importance = 'impurity',
-  probability = T
-  
+  probability = T,
+  class.weights = c(1, 2.5),
+  num.threads = 4
 )
 pred <- predict(md, data = dtm_am_va)$predictions[,2]
 get_auc(pred, y_va) 
@@ -199,20 +222,74 @@ vip(md, 35)
 
 
 # xgb amenities -----------
-summary(y_tr)
+ncol(dtm_am_pr_tr)
+ncol(dtm_am)
 md <- xgboost(
-  data = dtm_am_tr, label = y_tr,
-  eta = 0.2,
-  max_depth = 6,
-  nrounds = 200,
-  verbose = F,
-  nthread = 4
+  data = dtm_am_tr, label = ifelse(hbr_tr == 1, 1, 0),
+  eta = 0.05,
+  max_depth = 8,
+  nrounds = 50,
+  verbose = T,
+  print_every_n = 50,
+  nthread = 12,
+  weight = ifelse(hbr_tr == 1, 7, 1),
+  objective = 'binary:logistic',
+  eval_metric = 'auc'
 )
 pred <- predict(md, newdata = dtm_am_va)
 get_auc(pred, y_va) 
 # 0.7152156
 vip(md, 35)
 
+
+# xgb pruned amenities ----------
+md <- xgboost(
+  data = dtm_am_pr_tr, label = ifelse(hbr_tr == 1, 1, 0),
+  eta = 0.01,
+  max_depth = 6,
+  nrounds = 150,
+  verbose = T,
+  print_every_n = 50,
+  nthread = 12,
+  weight = ifelse(hbr_tr == 1, 7, 1),
+  objective = 'binary:logistic',
+  eval_metric = 'auc'
+)
+pred <- predict(md, newdata = dtm_am_pr_va)
+get_auc(pred, hbr_va) 
+# 0.7065387 \\ 0.7087925
+vip(md, 35)
+
+res_ms <- cube_search(
+  x = rbind(dtm_am_pr_tr, dtm_am_pr_va),
+  y = ifelse(c(hbr_tr, hbr_va) == 1, 1, 0),
+  vec_param1 = 1:5 * 25 + 100, # n round
+  vec_param2 = 1:5 * 2 / 100, # eta
+  vec_param3 = 5:9, # max depth
+  trainer = \(x, y, p1, p2, p3) {
+    md <- xgboost(
+      data = x, label = y,
+      nrounds = p1,
+      eta = p2,
+      max_depth = p3,
+      verbose = T,
+      print_every_n = 50,
+      nthread = 12,
+      weight = ifelse(hbr_tr == 1, 7, 1),
+      objective = 'binary:logistic',
+      eval_metric = 'auc'
+    )
+    return(md)
+  },
+  predictor = \(md, x) {
+    pred <- predict(md, newdata = x)
+    return(pred)
+  },
+  measurer = \(y1, y2) {
+    return(get_auc(y1, y2))
+  }
+)
+res_ms
 
 
 # svm amenities ----------

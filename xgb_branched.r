@@ -5,6 +5,7 @@ source('Library//utils.r')
 library(xgboost)
 library(ranger)
 library(lubridate)
+library(glmnet)
 
 # replace the string with the directory of the project folder "Data"
 # the original datasets MUST be placed under the Data folder for the following script to run correctly.
@@ -46,6 +47,23 @@ prs_va = prs[-sampled]
 # codes start here ----------------------------
 
 
+# prely amenities based --------------
+names(x_va)
+
+x_am_tr = x_tr[, 70:107]
+x_am_va = x_va[, 70:107]
+
+md_dummy_ridge = dummyVars(~., x_am_tr)
+x_am_dummy_tr = predict(md_dummy_ridge, x_tr)
+x_am_dummy_va = predict(md_dummy_ridge, x_va)
+
+md_ridge = glmnet(
+  x = x_am_dummy_tr, y = hbr_tr, alpha = 1, family = 'binomial',
+  lambda = 10^-7
+  )
+pred_hbr_ridge = predict(md_ridge, newx = x_am_dummy_va, type = 'response')
+get_auc(pred_hbr_ridge, hbr_va)
+# 0.6932712
 
 #data cleaning
 #To build the input matrix of xgboost, I need to remove the character columns
