@@ -13,6 +13,7 @@ get_baseline_accuracy <- function(y, n = 0, p = 1) {
   }
 }
 
+
 # plot the roc graph
 plot_roc <- function(pred_y_prob, valid_y_factor)  {
   pred_obj = prediction(pred_y_prob, valid_y_factor)
@@ -508,6 +509,7 @@ get_dtm <- function(
     ngram = c(1L, 2L), 
     doc_prop_min = 0,
     doc_prop_max = 1,
+    custom_stop_words = NULL,
     tf_idf = T
 ) {
   
@@ -524,28 +526,47 @@ get_dtm <- function(
   }
   
   
-  itoken_data = itoken(
-    text_col,
-    progressbar = F,
-    tokenizer = \(v) {
-      v %>%
-        tolower %>% # to lower
-        removeNumbers %>% #remove all numbers
-        replace_punctuations %>% #remove all punctuation
-        removePunctuation %>%
-        removeWords(tm::stopwords(kind="en")) %>% #remove stopwords
-        stemDocument %>% # stemming 
-        word_tokenizer 
-    }
-  )
+  if (is.null(custom_stop_words)) {
+    itoken_data = itoken(
+      text_col,
+      progressbar = F,
+      tokenizer = \(v) {
+        v %>%
+          tolower %>% # to lower
+          removeNumbers %>% #remove all numbers
+          replace_punctuations %>% #remove all punctuation
+          removePunctuation %>%
+          removeWords(tm::stopwords(kind="en")) %>% #remove stopwords
+          stemDocument %>% # stemming 
+          word_tokenizer 
+      }
+    )
+  } else{
+    itoken_data = itoken(
+      text_col,
+      progressbar = F,
+      tokenizer = \(v) {
+        v %>%
+          tolower %>% # to lower
+          removeNumbers %>% #remove all numbers
+          replace_punctuations %>% #remove all punctuation
+          removePunctuation %>%
+          removeWords(custom_stop_words) %>% # word vector
+          removeWords(tm::stopwords(kind="en")) %>% #remove stopwords
+          stemDocument %>% # stemming 
+          word_tokenizer 
+      }
+    )
+  }
+
   
   vocab_data = itoken_data %>%
     create_vocabulary(
       ngram = ngram
     ) %>%
     prune_vocabulary(
-      doc_proportion_min = 0.05,
-      doc_proportion_max = 0.8
+      doc_proportion_min = doc_prop_min,
+      doc_proportion_max = doc_prop_max
     )
   
   obj_vectorizer <- vocab_vectorizer(vocab_data)
@@ -557,4 +578,21 @@ get_dtm <- function(
   }
   
   return(dtm_data)
+}
+
+
+subset_dtm <- function(dtm, vec_col_name) {
+  res <- dtm[, which(colnames(dtm) %in% vec_col_name)] 
+  return(res)
+}
+
+
+plot_tree <- function(dataframe, formula) {
+  md_tree <- rpart(
+    formula,
+    data = dataframe
+  )
+  
+  plot(md_tree)
+  text(md_tree)
 }
