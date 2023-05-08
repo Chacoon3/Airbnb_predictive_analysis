@@ -46,26 +46,23 @@ nrow(x_test) == 12205
 # codes start here ----------------------------
 
 
-# prely amenities based --------------
-names(x_va)
-
-x_am_tr = x_tr[, 70:107]
-x_am_va = x_va[, 70:107]
-
-md_dummy_ridge = dummyVars(~., x_am_tr)
-x_am_dummy_tr = predict(md_dummy_ridge, x_tr)
-x_am_dummy_va = predict(md_dummy_ridge, x_va)
-
-md_ridge = glmnet(
-  x = x_am_dummy_tr, y = hbr_tr, alpha = 1, family = 'binomial',
-  lambda = 10^-7
-  )
-pred_hbr_ridge = predict(md_ridge, newx = x_am_dummy_va, type = 'response')
-get_auc(pred_hbr_ridge, hbr_va)
+# purely amenities based --------------
+# x_am_train = x_train[, 70:107]
+# 
+# md_dummy_ridge = dummyVars(~., x_am_train)
+# x_am_dummy_train = predict(md_dummy_ridge, x_am_train)
+# 
+# 
+# md_ridge = glmnet(
+#   x = x_am_dummy_tr, y = hbr_tr, alpha = 1, family = 'binomial',
+#   lambda = 10^-7
+#   )
+# pred_hbr_ridge = predict(md_ridge, newx = x_am_dummy_va, type = 'response')
+# get_auc(pred_hbr_ridge, hbr_va)
 # 0.6932712
 
-#data cleaning ------------------
-#To build the input matrix of xgboost, I need to remove the character columns
+# data cleaning ------------------
+
 cleaning_test <- function(df){
   df <- df %>%
     mutate(bed_category = as.factor(bed_category),
@@ -137,15 +134,16 @@ cleaning_test <- function(df){
   }
   return(df)}
 
-te <-cleaning_test(x_test)
+x_all <- cleaning_test(x) %>% 
+  select(!c('amenities', 'latitude', 'longitude'))
+tr = x_all[1:nrow(x_train), ]
+te = x_all[(nrow(x_train) + 1) : nrow(x_all), ]
 
-tr <- cleaning_test(x_train)
-tr <- tr %>% select(!amenities)
-te <- te %>% select(!amenities)
+
 #check if there any character col
 sum(sapply(tr, is.character))
 
-# colnames(tr)
+colnames(tr)
 
 #create dummy variables
 dummy <- dummyVars(formula=~., data = rbind(tr, te),fullRank = T)
@@ -165,12 +163,11 @@ prs_tr = prs[sampled]
 prs_va = prs[-sampled]
 
 
-# grid search result ---------------------
+# grid search ---------------------
 #      depth nround eta_set       auc
 # 6      5    600     0.2 0.9059210
 # 14     6    500     0.2 0.9057336
 # 44     9    800     0.2 0.9057282
-
 cs_res <- cube_search(
   x = rbind(x_tr, x_va),
   y = c(hbr_tr, hbr_va), # always remember use c to contacnate two vectors
@@ -248,6 +245,45 @@ vs_res %>% arrange(measurement %>% desc())
 # 5    0.08   0.9017903
 
 
+vs_res <- vector_search(
+  x = rbind(x_tr, x_va),
+  y = c(hbr_tr, hbr_va), # always remember use c to contacnate two vectors
+  vec_param1 = 2:5 * 3, # weight
+  trainer = \(x,y,p1) {
+    model <- xgboost(
+      data = x,
+      label = y,
+      max.depth = 8,
+      nrounds = 600,
+      eta = 0.06, 
+      objective = "binary:logistic",
+      eval_metric = "auc", 
+      verbose = T,
+      print_every_n = 100,
+      nthread = 12,
+      weight = ifelse(y == 1, p1, 1)
+    )
+    return(model)
+  },
+  predictor = \(m, x) {
+    pred <- predict(m, newdata = x)
+    return(pred)
+  },
+  measurer = \(y1, y2) {
+    return(get_auc(y1, y2))
+  },
+  n_per_round = 1
+)
+vs_res %>% arrange(measurement %>% desc())
+# optimal positive weight 9
+#     param1 measurement
+# 1      9   0.8981199
+# 2      6   0.8981117
+# 3     12   0.8967573
+# 4     15   0.8965645
+
+
+# train validation model --------------
 best_model <- xgboost(
   data = x_tr,
   label = hbr_tr,
@@ -257,21 +293,20 @@ best_model <- xgboost(
   objective = "binary:logistic",
   eval_metric = "auc", 
   verbose = T,
-  print_every_n = 50,
+  print_every_n = 100,
   nthread = 12,
   weight = ifelse(hbr_tr == 1, 10, 1)
 )
 pred <- predict(best_model, newdata = x_va)
 plot_roc(pred, hbr_va)
 get_auc(pred, hbr_va) 
-# 0.8989933 \\ 0.8987783 \\ 0.9003966
+# 0.8989933 \\ 0.8987783 \\ 0.9003966 \\ 0.9020315
 vip(best_model, 35)
-
 summary(best_model)
-##################make predictions for test####################
-#colnames in test and train are different
-#Compare col names and get missing cols
 
+
+cn <- colnames(x_tr)
+cn
 
 
 # train final model --------------------------
