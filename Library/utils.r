@@ -680,3 +680,14 @@ plot_tree <- function(dataframe, formula) {
   plot(md_tree)
   text(md_tree)
 }
+
+
+get_vip_dataframe <- function(md, x) {
+  plt_vip = vip(md, ncol(x))
+  res <- plt_vip$data %>%
+    as.data.frame() %>%
+    arrange(
+      desc(Sign), desc(Importance)
+    )
+  return(res)
+}
