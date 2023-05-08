@@ -33,16 +33,15 @@ nrow(x_train) == nrow(y_train)
 nrow(x_test) == 12205
 (length(hbr) == length(prs)) && (length(hbr) == nrow(y_train))
 
-
 # train-validation split
-sampled = sample(1:nrow(x_train), 0.75 * nrow(x_train))
-x_tr = x_train[sampled, ]
-x_va = x_train[-sampled, ]
-hbr_tr = hbr[sampled]
-hbr_va = hbr[-sampled]
-prs_tr = prs[sampled]
-prs_va = prs[-sampled]
-
+# sampled = sample(1:nrow(x_train), 0.75 * nrow(x_train))
+# x_tr = x_train[sampled, ]
+# x_va = x_train[-sampled, ]
+# hbr_tr = hbr[sampled]
+# hbr_va = hbr[-sampled]
+# prs_tr = prs[sampled]
+# prs_va = prs[-sampled]
+# 
 
 # codes start here ----------------------------
 
@@ -65,7 +64,7 @@ pred_hbr_ridge = predict(md_ridge, newx = x_am_dummy_va, type = 'response')
 get_auc(pred_hbr_ridge, hbr_va)
 # 0.6932712
 
-#data cleaning
+#data cleaning ------------------
 #To build the input matrix of xgboost, I need to remove the character columns
 cleaning_test <- function(df){
   df <- df %>%
@@ -141,105 +140,164 @@ cleaning_test <- function(df){
 te <-cleaning_test(x_test)
 
 tr <- cleaning_test(x_train)
+tr <- tr %>% select(!amenities)
+te <- te %>% select(!amenities)
 #check if there any character col
-sapply(tr, is.character)
+sum(sapply(tr, is.character))
 
-colnames(tr)
+# colnames(tr)
 
 #create dummy variables
-dummy_tr <- dummyVars(formula=~., data = tr,fullRank = TRUE)
-dummy_te <- dummyVars(formula=~., data = te,fullRank = TRUE) 
-tr <- predict(dummy_tr, newdata = tr)
-te <- predict(dummy_te, newdata = te)
+dummy <- dummyVars(formula=~., data = rbind(tr, te),fullRank = T)
+train_dum <- predict(dummy, newdata = tr)
+te_dum <- predict(dummy, newdata = te)
 
 #convert hbr into 1-0 variable
 y_train_hbr_1 <- ifelse(hbr == 'YES',1,0)
+prs <- ifelse(prs == 'YES',1,0)
 
-############################nested loop for tuning parameter###############
+sampled = sample(1:nrow(train_dum), 0.75 * nrow(train_dum))
+x_tr = train_dum[sampled, ]
+x_va = train_dum[-sampled, ]
+hbr_tr = y_train_hbr_1[sampled]
+hbr_va = y_train_hbr_1[-sampled]
+prs_tr = prs[sampled]
+prs_va = prs[-sampled]
 
 
-k=5
-fold_auc_df = data.frame(depth = rep(0,k),
-                         nround = rep(0,k),
-                         eta_set= rep(0,k),
-                         auc = rep(0,k))
-grid_search_res = NULL
-for(i in 1:k){
-  folds <- cut(seq(1,nrow(tr)),breaks=k,labels=FALSE)
-  #Segment your data by fold using the which() function 
-  valid_inds <- which(folds==i,arr.ind=TRUE)
-  valid_fold <- tr[valid_inds, ]
-  hbr_valid_fold <- y_train_hbr_1[valid_inds]
-  train_fold <- tr[-valid_inds, ]
-  hbr_train_fold <- y_train_hbr_1[-valid_inds]
-  grid_search_res = grid_search_xgb(
-    x_tr = train_fold, 
-    y_tr = hbr_train_fold,
-    x_va = valid_fold,
-    y_va = hbr_valid_fold,
-    vec_tree_depth = 5:6,
-    vec_nround = 5:7 * 100,
-    vec_eta_set = 2:4 /4 * 0.01
-  )
-  fold_auc_df[i,] = 
-    grid_search_res[order(grid_search_res$auc,decreasing = TRUE),][1,]
-  break
-}
-
-grid_search_res[order(grid_search_res$auc, decreasing = T), ]
+# grid search result ---------------------
 #      depth nround eta_set       auc
 # 6      5    600     0.2 0.9059210
 # 14     6    500     0.2 0.9057336
 # 44     9    800     0.2 0.9057282
 
+cs_res <- cube_search(
+  x = rbind(x_tr, x_va),
+  y = c(hbr_tr, hbr_va), # always remember use c to contacnate two vectors
+  vec_param1 = 4:8, # depth
+  vec_param2 = 3:7 * 100, # round
+  vec_param3 = 1:3 * 5 / 100, # eta
+  trainer = \(x,y,p1,p2,p3) {
+    model <- xgboost(
+      data = x,
+      label = y,
+      max.depth = p1,
+      nrounds = p2,
+      eta = p3, 
+      objective = "binary:logistic",
+      eval_metric = "auc", 
+      verbose = T,
+      print_every_n = 100,
+      nthread = 12,
+      weight = ifelse(y == 1, 10, 1)
+    )
+    return(model)
+  },
+  predictor = \(m, x) {
+    pred <- predict(m, newdata = x)
+    return(pred)
+  },
+  measurer = \(y1, y2) {
+    return(get_auc(y1, y2))
+  },
+  n_per_round = 1
+)
+cs_res %>% arrange(measurement %>% desc())
+#       param1 param2 param3 measurement
+# 1       8    600   0.10   0.9030510
+# 2       8    700   0.10   0.9028660
+# 3       8    700   0.05   0.9027338
+# 4       8    500   0.10   0.9027207
 
-best_model <- xgboost()
+
+vs_res <- vector_search(
+  x = rbind(x_tr, x_va),
+  y = c(hbr_tr, hbr_va), # always remember use c to contacnate two vectors
+  vec_param1 = 1:10 * 2 / 100, # eta
+  trainer = \(x,y,p1) {
+    model <- xgboost(
+      data = x,
+      label = y,
+      max.depth = 8,
+      nrounds = 600,
+      eta = p1, 
+      objective = "binary:logistic",
+      eval_metric = "auc", 
+      verbose = T,
+      print_every_n = 100,
+      nthread = 12,
+      weight = ifelse(y == 1, 10, 1)
+    )
+    return(model)
+  },
+  predictor = \(m, x) {
+    pred <- predict(m, newdata = x)
+    return(pred)
+  },
+  measurer = \(y1, y2) {
+    return(get_auc(y1, y2))
+  },
+  n_per_round = 2
+)
+vs_res %>% arrange(measurement %>% desc())
+#     param1 measurement
+# 1    0.06   0.9027252
+# 2    0.04   0.9020486
+# 3    0.12   0.9019057
+# 4    0.10   0.9018063
+# 5    0.08   0.9017903
+
+
+best_model <- xgboost(
+  data = x_tr,
+  label = hbr_tr,
+  max.depth = 8,
+  eta = 0.06, 
+  nrounds = 600,
+  objective = "binary:logistic",
+  eval_metric = "auc", 
+  verbose = T,
+  print_every_n = 50,
+  nthread = 12,
+  weight = ifelse(hbr_tr == 1, 10, 1)
+)
+pred <- predict(best_model, newdata = x_va)
+plot_roc(pred, hbr_va)
+get_auc(pred, hbr_va) 
+# 0.8989933 \\ 0.8987783 \\ 0.9003966
+vip(best_model, 35)
 
 summary(best_model)
-vip(best_model)
 ##################make predictions for test####################
 #colnames in test and train are different
 #Compare col names and get missing cols
-union_names <-union(colnames(tr),colnames(te))
-test_missing_cols <-setdiff(union_names,colnames(te))
-for (new_col in test_missing_cols){
-  a <- rep(0,nrow(te))
-  te <- cbind(te, a)
-  colnames(te)[ncol(te)] <- new_col
-}
-idx<-match(union_names,colnames(te))
-te_match <-te[,idx]
-colnames(te_match)
-
-train_missing_cols <-setdiff(union_names,colnames(tr))
-for (new_col in train_missing_cols){
-  print(new_col)
-  a <- rep(0,nrow(tr))
-  tr <- cbind(tr, a)
-  colnames(tr)[ncol(tr)] <- new_col
-}
-
-colnames(tr)
-
-idx<-match(union_names,colnames(tr))
-tr_match <-tr[,idx]
-
-#Check if test and training dataset have the same features
-match(colnames(te_match),colnames(tr_match))
-hbr_xgboost <- xgboost(data = tr_match, label = y_train_hbr_1, nround = 150, max_depth = 6,objective = "reg:logistic", eval_metric = "auc")
-y_te_pred <- predict(hbr_xgboost, newdata = te_match)
 
 
 
-length(te_match[,1])
+# train final model --------------------------
+x_bind = rbind(x_tr, x_va)
+hbr_bind = c(hbr_tr, hbr_va)
+final_model <- xgboost(
+  data = x_bind,
+  label = hbr_bind,
+  max.depth = 8,
+  eta = 0.06, 
+  nrounds = 600,
+  objective = "binary:logistic",
+  eval_metric = "auc", 
+  verbose = T,
+  print_every_n = 50,
+  nthread = 12,
+  weight = ifelse(hbr_bind == 1, 10, 1)
+)
 
-max(y_te_pred)
+final_pred = predict(final_model, newdata = te_dum)
 
-model <- xgb.dump(hbr_xgboost, with.stats = T)
-#compute feature importance matrix for selecting variables 
-importance_matrix <- xgb.importance(model = hbr_xgboost)
-nrow(importance_matrix)
-write.table(importance_matrix, "importance_matrix.csv")
+write.table(final_pred, "high_booking_rate_group5.csv", row.names = FALSE)
 
-write.table(y_te_pred, "high_booking_rate_group5.csv", row.names = FALSE)
+old_pred = read.csv(
+  r"(C:\Users\Chaconne\Documents\学业\Projects\Airbnb_predictive_analysis\Data\s4_predict.csv)"
+)
 
+last_pred = old_pred$x
+(final_pred - last_pred) %>% mean()

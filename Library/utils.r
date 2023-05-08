@@ -410,33 +410,54 @@ grid_search_xgb <- function(
 }
 
 
-# hyperparameter tuning with a vector of hyperpamameter
-vec_search <- function(
-    vec_param, x, y,
+check_npr <- function(n_per_round) {
+  if (n_per_round > 5) {
+    n_per_round = 5
+    warning('n_per_round maximum is 5')
+  }
+  
+  if (n_per_round < 1) {
+    n_per_round = 1
+    warning('n_per_round minimum is 1')
+  }
+  
+  return(n_per_round)
+}
+
+
+# hyperparameter tuning on a vector
+vector_search <- function(
+    vec_param1, x, y,
     trainer, predictor, measurer,
     verbose = T,
-    train_ratio = 0.75,
     n_per_round = 2) {
   
+  
+    n_per_round = check_npr(n_per_round)
     x_row = nrow(x)
-    res = data.frame(param1 = c(), measurement = c())
+    res = data.frame(param1 = 0, measurement = 0)
+    index_folds <- cut(
+      1:x_row %>% sample(size = x_row), 
+      breaks=5, 
+      labels=FALSE
+    )
     
-  for (ind in 1:length(vec_param)) {
-    param1 = vec_param[ind]
+  for (ind in 1:length(vec_param1)) {
+    param1 = vec_param1[ind]
     
     vec_measure = rep(0, n_per_round)
     for (n in 1:n_per_round) {
-        indice_tr = sample(1:x_row, train_ratio * x_row)
-        x_tr = x[indice_tr, ]
-        x_va = x[-indice_tr, ]
-        y_tr = y[indice_tr]
-        y_va = y[-indice_tr]
-        
-        model = trainer(x_tr, y_tr, param)
-        pred = predictor(model, x_va)
-        meas = measurer(pred, y_va)   
+      indice_tr <- which(index_folds != n,arr.ind=TRUE)
+      x_tr = x[indice_tr, ]
+      x_va = x[-indice_tr, ]
+      y_tr = y[indice_tr]
+      y_va = y[-indice_tr]
       
-        vec_measure[n] = meas
+      model = trainer(x_tr, y_tr, param1)
+      pred = predictor(model, x_va)
+      meas = measurer(pred, y_va)   
+      
+      vec_measure[n] = meas
     }
     res[nrow(res) + 1, ] = c(param1, mean(vec_measure))
 
@@ -446,36 +467,38 @@ vec_search <- function(
       )
     }
   }
-  data = data.frame(
-    param = vec_param,
-    measurement = vec_measure
-  )
-  return(data)
+    return(res[2:nrow(res), ])
 }
 
 
-# hyperparameter tuning with two vectors of hyperpamameter
+# hyperparameter tuning on a matrix by the Discartes products of two vectors
 matrix_search <- function(
       vec_param1, vec_param2, x, y,
       trainer, predictor, measurer,
       verbose = T,
-      train_ratio = 0.75,
       n_per_round = 2
 ) {
   
+
+  n_per_round = check_npr(n_per_round)
   counter = 0
   x_row = nrow(x)
-  vec_measure = c()
-  res = data.frame(param1 = c(), param2 = c(), measurement = c())
+  res = data.frame(param1 = 0, param2 = 0, measurement = 0)
   
-  for (ind in 1:length(vec_param1)) {
+  index_folds <- cut(
+      1:x_row %>% sample(size = x_row), 
+      breaks=5, 
+      labels=FALSE
+    )
+
+  for (ind1 in 1:length(vec_param1)) {
     for (ind2 in 1:length(vec_param2)) {
-      param1 = vec_param1[ind]
-      param2 = vec_param2[ind]
+      param1 = vec_param1[ind1]
+      param2 = vec_param2[ind2]
       
       vec_measure = rep(0, n_per_round)
       for (n in 1:n_per_round) {
-        indice_tr = sample(1:x_row, train_ratio * x_row)
+        indice_tr <- which(index_folds != n,arr.ind=TRUE)
         x_tr = x[indice_tr, ]
         x_va = x[-indice_tr, ]
         y_tr = y[indice_tr]
@@ -498,22 +521,29 @@ matrix_search <- function(
     }
   }
   
-  return(res)
+  return(res[2:nrow(res), ])
 }
 
 
+# hyperparameter tuning on a cube by the Discartes products of three vectors
 cube_search <- function(
       x, y, 
       vec_param1, vec_param2, vec_param3,
       trainer, predictor, measurer,
-      verbose = T, train_ratio = 0.75,
+      verbose = T,
       n_per_round = 2
 ) {
   
+  n_per_round = check_npr(n_per_round)
   counter = 0
   x_row = nrow(x)
-  res = data.frame(param1 = c(), param2 = c(), param3 = c(), measurement = c())
+  res = data.frame(param1 = 0, param2 = 0, param3 = 0, measurement = 0)
 
+  index_folds <- cut(
+    1:x_row %>% sample(size = x_row), 
+    breaks=5, 
+    labels=FALSE
+  )
   
   for (i1 in 1:length(vec_param1)) {
     for (i2 in 1:length(vec_param2)) {
@@ -527,7 +557,7 @@ cube_search <- function(
         vec_measure = rep(0, n_per_round)
         for (n in 1:n_per_round) {
           # splitting
-          indice_tr = sample(1:x_row, train_ratio * x_row)
+          indice_tr <- which(index_folds != n,arr.ind=TRUE)
           x_tr = x[indice_tr, ]
           x_va = x[-indice_tr, ]
           y_tr = y[indice_tr]
@@ -554,7 +584,7 @@ cube_search <- function(
     }
   }
   
-  return(res)
+  return(res[2:nrow(res), ])
 }
 
 

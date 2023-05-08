@@ -245,8 +245,8 @@ vip(md, 35)
 # xgb pruned amenities ----------
 md <- xgboost(
   data = dtm_am_pr_tr, label = ifelse(hbr_tr == 1, 1, 0),
-  eta = 0.01,
-  max_depth = 6,
+  eta = 0.2,
+  max_depth = 4,
   nrounds = 150,
   verbose = T,
   print_every_n = 50,
@@ -257,25 +257,23 @@ md <- xgboost(
 )
 pred <- predict(md, newdata = dtm_am_pr_va)
 get_auc(pred, hbr_va) 
-# 0.7065387 \\ 0.7087925
+# 0.7065387 \\ 0.7087925  \\ 0.7124978
 vip(md, 35)
 
-res_ms <- cube_search(
+res_ms <- vector_search(
   x = rbind(dtm_am_pr_tr, dtm_am_pr_va),
   y = ifelse(c(hbr_tr, hbr_va) == 1, 1, 0),
-  vec_param1 = 1:5 * 25 + 100, # n round
-  vec_param2 = 1:5 * 2 / 100, # eta
-  vec_param3 = 5:9, # max depth
-  trainer = \(x, y, p1, p2, p3) {
+  vec_param1 = 4:8, # max depth
+  trainer = \(x, y, p1) {
     md <- xgboost(
       data = x, label = y,
-      nrounds = p1,
-      eta = p2,
-      max_depth = p3,
+      nrounds = 150,
+      eta = 0.2,
+      max_depth = p1,
       verbose = T,
       print_every_n = 50,
       nthread = 12,
-      weight = ifelse(hbr_tr == 1, 7, 1),
+      weight = ifelse(y == 1, 7, 1),
       objective = 'binary:logistic',
       eval_metric = 'auc'
     )
@@ -289,7 +287,69 @@ res_ms <- cube_search(
     return(get_auc(y1, y2))
   }
 )
-res_ms
+res_ms[order(res_ms$measurement, decreasing = T), ]
+
+
+res_ms <- matrix_search(
+  x = rbind(dtm_am_pr_tr, dtm_am_pr_va),
+  y = ifelse(c(hbr_tr, hbr_va) == 1, 1, 0),
+  vec_param1 = 3:4 * 50, # n round
+  vec_param2 = 2:3 / 10, # eta
+  trainer = \(x, y, p1, p2) {
+    md <- xgboost(
+      data = x, label = y,
+      nrounds = p1,
+      eta = p2,
+      max_depth = 6,
+      verbose = T,
+      print_every_n = 50,
+      nthread = 12,
+      weight = ifelse(y == 1, 7, 1),
+      objective = 'binary:logistic',
+      eval_metric = 'auc'
+    )
+    return(md)
+  },
+  predictor = \(md, x) {
+    pred <- predict(md, newdata = x)
+    return(pred)
+  },
+  measurer = \(y1, y2) {
+    return(get_auc(y1, y2))
+  }
+)
+res_ms[order(res_ms$measurement, decreasing = T), ]
+
+res_ms <- cube_search(
+  x = rbind(dtm_am_pr_tr, dtm_am_pr_va),
+  y = ifelse(c(hbr_tr, hbr_va) == 1, 1, 0),
+  vec_param1 = 1:5 * 25 + 100, # n round
+  vec_param2 = 1:10 * 2 / 100, # eta
+  vec_param3 = 5:9, # max depth
+  trainer = \(x, y, p1, p2, p3) {
+    md <- xgboost(
+      data = x, label = y,
+      nrounds = p1,
+      eta = p2,
+      max_depth = p3,
+      verbose = T,
+      print_every_n = 50,
+      nthread = 12,
+      weight = ifelse(y == 1, 7, 1),
+      objective = 'binary:logistic',
+      eval_metric = 'auc'
+    )
+    return(md)
+  },
+  predictor = \(md, x) {
+    pred <- predict(md, newdata = x)
+    return(pred)
+  },
+  measurer = \(y1, y2) {
+    return(get_auc(y1, y2))
+  }
+)
+res_ms[order(res_ms$measurement, decreasing = T), ]
 
 
 # svm amenities ----------
@@ -514,7 +574,8 @@ get_auc(pred, y_va)
 
 
 
-# feature engineering  -------------
+
+# feature engineering on original set -------------
 
 feature_engineering_full_set <- function(df) {
   df <- df %>%
@@ -670,6 +731,63 @@ md_dummy = dummyVars(~., x_all, fullRank = T)
 x_all_dum = predict(md_dummy, x_all)
 x_dum_train = x_all_dum[1:nrow(y_train), ]
 
+# split
+x_dum_tr = x_dum_train[ind_sample, ]
+x_dum_va = x_dum_train[-ind_sample, ]
+
+# logistic dummy test ----------
+colnames(x_dum_tr)
+vec_col_names = c('price', 'monthly_price', 'price_per_person')
+which(colnames(x_dum_tr) %in% vec_col_names)
+md <- glmnet(
+  x = x_dum_tr[, which(colnames(x_dum_tr) %in% vec_col_names)],
+  y = hbr_tr,
+  family = 'binomial',
+  alpha = 1,
+  lambda = 0
+)
+
+pred <- predict(
+  md, 
+  newx = x_dum_va[, which(colnames(x_dum_tr) %in% vec_col_names)], 
+  type = 'response')
+get_auc(pred, y_va)
+# 0.6151317
+vip(md, 35)
+
+
+# original set at factor lecel -------------
+x_fac_train = x_all[1:nrow(y_train), ] # dataset at factor level, not dummies
+# split
+x_fac_tr = x_fac_train[ind_sample, ]
+x_fac_va = x_fac_train[-ind_sample, ]
+
+colnames(x_fac_tr)
+df_fac_mapper <- function(df) {
+  return(
+    df %>%
+      select(
+        price,
+        monthly_price
+      ) %>%
+      as.matrix()
+  )
+}
+
+
+md <- glm.fit(
+  x = x_fac_tr %>% df_fac_mapper,
+  y = hbr_tr,
+  family = 'binomial',
+)
+
+pred <- predict(
+  md, 
+  newx = x_fac_va, 
+  type = 'response')
+get_auc(pred, y_va)
+# 0.6151317
+vip(md, 35)
 
 
 # combining column data with nlp ------------------
