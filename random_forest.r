@@ -204,6 +204,14 @@ x <- x_full_set %>%
   feature_engineering_full_set() %>%
   feature_engineering()
 
+x_sls <- x_full_set %>%
+  feature_engineering_full_set() %>%
+  feature_engineering()
+
+
+x_sls_train <- x[1:nrow(y_train),]
+x_sls_test <- x[(nrow(y_train) + 1): nrow(x),]
+
 
 hbr <- y_train$high_booking_rate %>% as.factor()
 hbr <- ifelse(hbr == 'YES', 1, 0)
@@ -234,45 +242,45 @@ prs_va = prs[-sampled]
 
 
 # feature comparing -----------------------
-x1 <- x_train
-
-d1 <- dummyVars(formula = ~., x1, fullRank = T)
-x1 <- predict(d1, x1)
-
-
-x2 <- x_train %>% 
-  mutate(
-    availability_30 = case_when(
-      availability_30 >= 27 ~ '>=27',
-      availability_30 >= 1 ~ '>=1',
-      TRUE ~ '0'
-    ) %>% as.factor()
-  )
-x2 <- predict(md_dummy, x2)
-
-
-df_cf = compare_feature(
-  x1, x2, prs, 
-  trainer = \(x, y) {
-    model <- ranger(x = x, y = y %>% as.factor(),
-                    mtry = 26, 
-                    max.depth = 10, # seemingly optimal
-                    num.trees=600,
-                    importance="impurity",
-                    probability = TRUE,
-                    verbose = F
-                    )
-    return(model)
-  },
-  predictor = \(model, x) {
-    pred = predict(model, data = x)$predictions[,2]
-    return(pred)
-  },
-  measurer = \(y1, y2) {
-    return(get_auc(y1, y2))
-  }
-)
-df_cf
+# x1 <- x_train
+# 
+# d1 <- dummyVars(formula = ~., x1, fullRank = T)
+# x1 <- predict(d1, x1)
+# 
+# 
+# x2 <- x_train %>% 
+#   mutate(
+#     availability_30 = case_when(
+#       availability_30 >= 27 ~ '>=27',
+#       availability_30 >= 1 ~ '>=1',
+#       TRUE ~ '0'
+#     ) %>% as.factor()
+#   )
+# x2 <- predict(md_dummy, x2)
+# 
+# 
+# df_cf = compare_feature(
+#   x1, x2, prs, 
+#   trainer = \(x, y) {
+#     model <- ranger(x = x, y = y %>% as.factor(),
+#                     mtry = 26, 
+#                     max.depth = 10, # seemingly optimal
+#                     num.trees=600,
+#                     importance="impurity",
+#                     probability = TRUE,
+#                     verbose = F
+#                     )
+#     return(model)
+#   },
+#   predictor = \(model, x) {
+#     pred = predict(model, data = x)$predictions[,2]
+#     return(pred)
+#   },
+#   measurer = \(y1, y2) {
+#     return(get_auc(y1, y2))
+#   }
+# )
+# df_cf
 
 
 #view -----------------
@@ -301,13 +309,14 @@ x_for_view$hbr = hbr
 table(x_for_view$hs_year,x_for_view$prs) %>%
   prop.table()
 
+
 tar_fac <- y_train$perfect_rating_score %>% as.factor()
 obj_test <- x_view %>%
   mutate(
     host_response_time = host_response_time %>% as.factor()
   ) %>%
   cbind(tar_fac) %>% 
-  group_by(availability_30) %>%
+  group_by(is_location_exact) %>%
   mutate(
     inst_count = n()
   ) %>%
@@ -880,3 +889,68 @@ nrow(x_view)
 
 summary(x$city)
 summary(df_redfin_current$state)
+
+
+# combining with dtm --------------------
+dtm_final <- get_final_dtm(x_full_set, F)
+dtm_final_bin <- dtm_final > 0 + 0
+
+
+dtm_train = dtm_final[1:nrow(y_train), ]
+dtm_te = dtm_final[(nrow(y_train) + 1): nrow(x_full_set), ]
+
+dtm_bin_train = dtm_final_bin[1:nrow(y_train), ]
+dtm_bin_te = dtm_final_bin[(nrow(y_train) + 1): nrow(x_full_set), ]
+
+dtm_tr = dtm_train[sampled, ]
+dtm_va = dtm_train[-sampled, ]
+
+dtm_bin_tr = dtm_bin_train[sampled, ]
+dtm_bin_va = dtm_bin_train[-sampled, ]
+
+md_ <- glmnet(
+  x = dtm_bin_tr, y = prs_tr,
+  weights = ifelse(prs_tr == 1, 2.5, 1),
+  family = 'binomial',
+  alpha = 1,
+  lambda = 0.001,
+  parallel = T
+)
+
+pred <- predict(md_, newx = dtm_bin_va, type = 'response')
+get_auc(pred, prs_va)
+# 0.6935507
+
+
+summary(prs_tr)
+md_ <- ranger(
+  x = dtm_tr, y = prs_tr %>% as.factor(),
+  importance="impurity",
+  probability = TRUE,
+  num.threads = 12,
+  max.depth	= 7,
+  class.weights = c(1, 10),
+  verbose = T
+)
+pred <- predict(md_, newx = dtm_va, type = 'response')
+get_auc(pred, prs_va)
+
+
+md_ <- xgboost(
+  data = dtm_tr,
+  label = prs_tr,
+  max.depth = 7,
+  eta = 0.06, 
+  nrounds = 500,
+  objective = "binary:logistic",
+  eval_metric = "auc", 
+  verbose = T,
+  weight = ifelse(prs_tr == 1, 3, 1),
+  print_every_n = 100,
+  nthread = 12
+)
+
+pred <- predict(md_, newdata = dtm_va)
+get_auc(pred, prs_va)
+# 0.6935507
+plot_roc(pred, prs_va)

@@ -43,18 +43,19 @@ get_baseline_accuracy(y_train$perfect_rating_score)
 get_baseline_accuracy(y_train$high_booking_rate)
 summary(y_train$perfect_rating_score)
 summary(y_train$high_booking_rate)
-25/ 74
+dtm_final <- get_final_dtm(x)
+
 
 # create dtm -------------------
 # amenities dtm
-dtm_am <- get_dtm(x$amenities, tf_idf = F)
-dtm_am_train = dtm_am[1:train_length, ]
-dtm_am_te = dtm_am[(train_length + 1): nrow(dtm_am), ]
+# dtm_am <- get_dtm(x$amenities, tf_idf = F)
+# dtm_am_train = dtm_am[1:train_length, ]
+# dtm_am_te = dtm_am[(train_length + 1): nrow(dtm_am), ]
 
 
 dtm_am_pruned <- get_dtm(
     x$amenities, tf_idf = T,
-    doc_prop_min = 0.01, doc_prop_max = 0.7
+    doc_prop_min = 0.01, doc_prop_max = 0.7, binary = T
   )
 dtm_am_pruned_train = dtm_am_pruned[1:train_length, ]
 dtm_am_pruned_te = dtm_am_pruned[(train_length + 1): nrow(dtm_am_pruned), ]
@@ -68,7 +69,10 @@ dtm_access_te = dtm_access[(train_length + 1): nrow(dtm_access), ]
 
 
 # description dtm
-dtm_desc <- get_dtm(x$description, tf_idf = T)
+dtm_desc <- get_dtm(
+    x$description, tf_idf = T, 
+    doc_prop_min = 0.01, doc_prop_max = 0.7, binary = T
+  )
 dtm_desc_train = dtm_desc[1:train_length, ]
 dtm_desc_te = dtm_desc[(train_length + 1): nrow(dtm_desc), ]
 
@@ -80,13 +84,14 @@ dtm_ha_te = dtm_ha[(train_length + 1): nrow(dtm_ha), ]
 
 
 # house_rules dtm
-dtm_hr <- get_dtm(x$house_rules)
+dtm_hr <- get_dtm(x$house_rules, doc_prop_min = 0.01, doc_prop_max = 0.7)
 dtm_hr_train = dtm_hr[1:train_length, ]
 dtm_hr_te = dtm_hr[(train_length + 1): nrow(dtm_hr), ]
 
 
 # interaction dtm
-dtm_itrt <- get_dtm(x$interaction)
+dtm_itrt <- get_dtm(
+  x$interaction, doc_prop_min = 0.01, doc_prop_max = 0.7, binary = T)
 dtm_itrt_train = dtm_itrt[1:train_length, ]
 dtm_itrt_te = dtm_itrt[(train_length + 1): nrow(dtm_itrt), ]
 
@@ -98,19 +103,20 @@ dtm_no_te = dtm_no[(train_length + 1): nrow(dtm_no), ]
 
 
 # transit dtm
-dtm_transit <- get_dtm(x$transit)
+dtm_transit <- get_dtm(
+  x$transit, doc_prop_min = 0.01, doc_prop_max = 0.7, binary = T)
 dtm_transit_train = dtm_transit[1:train_length, ]
 dtm_transit_te = dtm_transit[(train_length + 1): nrow(dtm_transit), ]
 
 
 # summary dtm
-dtm_summary <- get_dtm(x$summary)
+dtm_summary <- get_dtm(x$summary, doc_prop_min = 0.01, doc_prop_max = 0.7)
 dtm_summary_train = dtm_summary[1:train_length, ]
 dtm_summary_te = dtm_summary[(train_length + 1): nrow(dtm_summary), ]
 
 
 # host verification dtm
-dtm_hv <- get_dtm(x$host_verifications)
+dtm_hv <- get_dtm(x$host_verifications, doc_prop_min = 0.01, doc_prop_max = 0.7)
 dtm_hv_train = dtm_hv[1:train_length, ]
 dtm_hv_te = dtm_hv[(train_length + 1): nrow(dtm_hv), ]
 
@@ -126,8 +132,14 @@ prs_tr = y_train$perfect_rating_score[ind_sample]
 prs_va = y_train$perfect_rating_score[-ind_sample]
 
 
-dtm_am_tr = dtm_am_train[ind_sample, ]
-dtm_am_va = dtm_am_train[-ind_sample, ]
+dtm_final_train = dtm_final[1:train_length, ]
+dtm_final_te = dtm_final[(1 +train_length): nrow(dtm_final), ]
+
+dtm_final_tr = dtm_final_train[ind_sample,]
+dtm_final_va = dtm_final_train[-ind_sample,]
+
+# dtm_am_tr = dtm_am_train[ind_sample, ]
+# dtm_am_va = dtm_am_train[-ind_sample, ]
 
 dtm_am_pr_tr = dtm_am_pruned_train[ind_sample, ]
 dtm_am_pr_va = dtm_am_pruned_train[-ind_sample, ]
@@ -240,6 +252,25 @@ pred <- predict(md, newdata = dtm_am_va)
 get_auc(pred, y_va) 
 # 0.7152156
 vip(md, 35)
+
+
+
+# regularized logistic pruned amenities ----------
+# binary appears slightly better
+md <- glmnet(
+  x = dtm_am_pr_tr, y = hbr_tr,
+  weights = ifelse(hbr_tr == 1, 2.5, 1),
+  family = 'binomial',
+  alpha = 1,
+  lambda = 0.001,
+  parallel = T,
+  trace.it = T
+)
+
+pred <- predict(md, newx = dtm_am_pr_va, type = 'response')
+get_auc(pred, y_va)
+# 0.6990129
+vip(md, 30)
 
 
 # xgb pruned amenities ----------
@@ -433,7 +464,7 @@ vec_auc
 
 
 # logistic description ---------------------
-# better with tf-idf
+# better with binary
 md <- glmnet(
   x = dtm_desc_tr, y = y_tr,
   family = 'binomial',
@@ -443,7 +474,7 @@ md <- glmnet(
 
 pred <- predict(md, newx = dtm_desc_va, type = 'response')
 get_auc(pred, y_va)
-# 0.6914038
+# 0.6914038 \\ 0.7128931
 vip(md, 35)
 confusionMatrix(
   data = ifelse(pred >= 0.5, 1, 0) %>% as.factor(),
@@ -479,7 +510,6 @@ get_auc(pred, y_va)
 # 0.5868018
 vip(md, 35)
 
-
 # logistic interaction ---------------------
 md <- glmnet(
   x = dtm_inrt_tr, y = y_tr,
@@ -490,8 +520,10 @@ md <- glmnet(
 
 pred <- predict(md, newx = dtm_inrt_va, type = 'response')
 get_auc(pred, y_va)
-# 0.6077848
-vip(md, 35)
+# 0.6077848 \\ 0.6321151 \\ 0.6395231
+plot_vip <- get_vip_dataframe(md, dtm_inrt_va)
+plot_vip$Importance %>% summary()
+dtm_inrt_tr[, which(colnames(dtm_inrt_tr) == 'roommat')] 
 
 
 # logistic neighborhood overview ---------------------
@@ -509,20 +541,22 @@ vip(md, 35)
 
 
 # logistic summary ---------------------
+# better with binary
 md <- glmnet(
-  x = dtm_summary_tr, y = y_tr,
+  x = dtm_summary_tr >0+0, y = y_tr,
   family = 'binomial',
   alpha = 1,
   lambda = 10^-7
 )
 
-pred <- predict(md, newx = dtm_summary_va, type = 'response')
+pred <- predict(md, newx = dtm_summary_va>0+0, type = 'response')
 get_auc(pred, y_va)
-# 0.6151317
+# 0.6151317 \\ 0.6622437
 vip(md, 35)
 
 
 # logistic transit ---------------------
+# binary transit performs better
 md <- glmnet(
   x = dtm_transit_tr, y = y_tr,
   family = 'binomial',
@@ -532,7 +566,7 @@ md <- glmnet(
 
 pred <- predict(md, newx = dtm_transit_va, type = 'response')
 get_auc(pred, y_va)
-# 0.6032337
+# 0.6032337 \\ 0.6131411 \\ 0.6215553
 vip(md, 35)
 
 
@@ -547,7 +581,7 @@ md <- glmnet(
 
 pred <- predict(md, newx = dtm_hv_va, type = 'response')
 get_auc(pred, y_va)
-# 0.6032337
+# 0.5578215
 vip(md, 35)
 
 hv_terms = c(
@@ -735,9 +769,144 @@ x_dum_train = x_all_dum[1:nrow(y_train), ]
 x_dum_tr = x_dum_train[ind_sample, ]
 x_dum_va = x_dum_train[-ind_sample, ]
 
+
+# dtm for consideration: ------------
+# very high: amenities pruned, description
+# high: summary, transit, host verification
+# medium: host rule, interaction
+
+# merged dtm --------------
+
+dtm_merged_train = cbind(
+  dtm_am_pruned_train, dtm_desc_train,
+  dtm_summary_train, dtm_transit_train, dtm_hv_train,
+  dtm_hr_train, dtm_itrt_train
+)
+
+dtm_merged_te = cbind(
+  dtm_am_pruned_te, dtm_desc_te,
+  dtm_summary_te, dtm_transit_te, dtm_hv_te,
+  dtm_hr_te, dtm_itrt_te
+)
+
+dtm_merged_tr = dtm_merged_train[ind_sample, ]
+dtm_merged_va = dtm_merged_train[-ind_sample, ]
+ncol(dtm_merged_train)
+
+md <- glmnet(
+  x = dtm_merged_tr, y = hbr_tr,
+  weights = ifelse(hbr_tr == 1, 5, 1),
+  family = 'binomial',
+  alpha = 1,
+  lambda = 0.001,
+  parallel = T,
+  trace.it = T
+)
+
+pred <- predict(md, newx = dtm_merged_va, type = 'response')
+get_auc(pred, y_va)
+# 0.6990129 \\ 0.7681656
+
+
+md <- glmnet(
+  x = dtm_final_tr, y = hbr_tr,
+  weights = ifelse(hbr_tr == 1, 5, 1),
+  family = 'binomial',
+  alpha = 1,
+  lambda = 0.001,
+  parallel = T
+)
+
+pred <- predict(md, newx = dtm_final_va, type = 'response')
+get_auc(pred, y_va)
+# 0.7696559
+df_vip = get_vip_dataframe(md, dtm_final_va)
+df_vip %>%
+  arrange(desc(Sign), desc(Importance)) %>%
+  head(20)
+
+
+# subset merged dtm -------------------
+df_vip <- get_vip_dataframe(md, dtm_merged_tr)
+df_vip$Importance %>% boxplot()
+df_vip$Importance %>% summary() # 3rd qu. 1.0445 
+important_token = df_vip %>%
+  filter(Importance >= quantile(Importance, 0.7)) %>%
+  select(Variable)
+
+important_token <- important_token$Variable
+length(important_token)
+
+dtm_subset_train <- subset_dtm(
+  dtm_merged_train, important_token
+)
+
+dtm_subset_te <- subset_dtm(
+  dtm_merged_te, important_token
+)
+
+
+# dtm_subset_train %>% colnames()
+
+dtm_subset_tr = dtm_subset_train[ind_sample, ]
+dtm_subset_va = dtm_subset_train[-ind_sample, ]
+md <- glmnet(
+  x = dtm_subset_tr, y = hbr_tr,
+  weights = ifelse(hbr_tr == 1, 5, 1),
+  family = 'binomial',
+  alpha = 1,
+  lambda = 0.001,
+  parallel = T,
+  trace.it = T
+)
+pred <- predict(md, newx = dtm_subset_va, type = 'response')
+get_auc(pred, y_va)
+# 0.755716
+
+
+vs_res <- vector_search(
+  x = rbind(dtm_merged_tr, dtm_merged_va),
+  y = c(hbr_tr, hbr_va),
+  vec_param1 = seq(0.000000001, 1, length.out = 50),
+  trainer = \(x,y,p) {
+    md <- glmnet(
+      x = x, y = y,
+      weights = ifelse(y == 1, 5, 1),
+      family = 'binomial',
+      alpha = 1,
+      lambda = p,
+      parallel = T,
+      trace.it = 0
+    )
+    
+    return(md)
+  },
+  predictor = \(m,x) {
+    return(
+      predict(m, newx = x, type = 'response')
+    )
+  },
+  measurer = \(y1,y2) {
+    return(
+      get_auc(y1, y2)
+    )
+  },
+  n_per_round = 2
+)
+vs_res %>%
+  arrange(
+    desc(measurement)
+  )
+# 1.6 appears optimal for weight
+#   param1 measurement
+# 1    0.8   0.7663251
+# 2    1.2   0.7662225
+# 3    1.6   0.7660323
+
+
 # logistic dummy test ----------
-colnames(x_dum_tr)
-vec_col_names = c('price', 'monthly_price', 'price_per_person')
+# colnames(x_dum_tr)
+vec_col_names = c('availability_30', 'availability_60', 'price_per_sqfeet')
 which(colnames(x_dum_tr) %in% vec_col_names)
 md <- glmnet(
   x = x_dum_tr[, which(colnames(x_dum_tr) %in% vec_col_names)],
@@ -753,63 +922,74 @@ pred <- predict(
   type = 'response')
 get_auc(pred, y_va)
 # 0.6151317
-vip(md, 35)
-
-
-# original set at factor lecel -------------
-x_fac_train = x_all[1:nrow(y_train), ] # dataset at factor level, not dummies
-# split
-x_fac_tr = x_fac_train[ind_sample, ]
-x_fac_va = x_fac_train[-ind_sample, ]
-
-colnames(x_fac_tr)
-df_fac_mapper <- function(df) {
-  return(
-    df %>%
-      select(
-        price,
-        monthly_price
-      ) %>%
-      as.matrix()
-  )
-}
-
-
-md <- glm.fit(
-  x = x_fac_tr %>% df_fac_mapper,
-  y = hbr_tr,
-  family = 'binomial',
-)
-
-pred <- predict(
-  md, 
-  newx = x_fac_va, 
-  type = 'response')
-get_auc(pred, y_va)
-# 0.6151317
-vip(md, 35)
 
 
 # combining column data with nlp ------------------
+
+# x_all[1:nrow(y_train), ] %>%
+#   mutate(
+#     hbr = y_train$high_booking_rate
+#   ) %>%
+#   group_by(host_response_time) %>%
+#   summarise(
+#     count = n(),
+#     p = sum(hbr == 1),
+#     n = sum(hbr != 1),
+#     pn_ratio = p /n,
+#     p_ratio = p / count,
+#     n_ratio = n/ count
+#   )
+
+summary(x$availability_30 %>% as.numeric())
+x_tr_av30 <- x_all[1:nrow(y_train), ] %>%
+  mutate(
+    hbr = y_train$high_booking_rate
+  ) %>%
+  group_by(cancellation_policy) %>%
+  summarise(
+    count = n(),
+    p = sum(hbr == 1),
+    n = sum(hbr != 1),
+    pn_ratio = p /n,
+    p_ratio = p / count,
+    n_ratio = n/ count
+  ) %>%
+  arrange(desc(pn_ratio))
+x_tr_av30$pn_ratio %>% boxplot()
+
 
 x_selected <- x_all %>%
   select(
     availability_30,
     host_response_time,
+    monthly_price,
     min_night_length,
     host_listings_count,
-    price
+    price,
+    price_per_person,
+    price_per_sqfeet,
+    # square_feet,
+    # bathrooms,
+    # cancellation_policy
+  ) %>%
+  mutate(
+    availability_30 = availability_30 %>% as.numeric(),
+    
+    host_response_time = case_when(
+      host_response_time == 'within an hour' ~ 'an hour',
+      host_response_time == 'within a few hours' ~ 'a few hours',
+      TRUE ~ 'Other'
+    )
   )
 
 md_dum2 = dummyVars(~., x_selected, fullRank = T)
 x_dum_selected = predict(md_dum2, x_selected)
 
 merged_dum = cbind(
-  dtm_am,
-  dtm_desc,
-  x_dum_selected,
-  dtm_summary,
-  dtm_transit
+  rbind(
+    dtm_subset_train, dtm_subset_te
+  ),
+  x_dum_selected
 )
 
 merged_train = merged_dum[1:train_length, ]
@@ -820,19 +1000,20 @@ merged_tr = merged_train[ind_sample, ]
 merged_va = merged_train[-ind_sample, ]
 merged_hbr_tr = y_train$high_booking_rate[ind_sample]
 merged_hbr_va = y_train$high_booking_rate[-ind_sample]
-
+ncol(merged_tr)
 
 md_merged <- glmnet(
   x = merged_tr, y = merged_hbr_tr,
   family = 'binomial',
   alpha = 1,
-  lambda = 10^-7
+  lambda = 10^-7,
+  weights = ifelse(merged_hbr_tr == 1, 5, 1)
 )
 
 pred <- predict(md_merged, newx = merged_va, type = 'response')
 get_auc(pred, merged_hbr_va)
-# 0.7871135
-vip(md, 35)
+# 0.7871135 \\ 0.8005933
+vip(md_merged, 35)
 
 
 md_ranger <- ranger(
@@ -840,23 +1021,34 @@ md_ranger <- ranger(
   y = merged_hbr_tr,
   num.trees=600,
   importance="impurity",
-  probability = TRUE
+  probability = TRUE,
+  num.threads = 12,
+  max.depth	= 7,
+  class.weights = c(1, 10),
+  verbose = T
 )
 
 hbr_prob_ranger <- 
   predict(md_ranger, data = merged_va)$predictions[,2]
 get_auc(hbr_prob_ranger, merged_hbr_va)
+# 0.7894064
 
 
 md_xgb <- xgboost(
   data = merged_tr,
   label = ifelse(merged_hbr_tr == 1, 1, 0),
-  max.depth = 5,
-  eta = 0.2, 
+  max.depth = 7,
+  eta = 0.06, 
   nrounds = 600,
   objective = "binary:logistic",
   eval_metric = "auc", 
-  verbose = T
+  verbose = T,
+  weight = ifelse(merged_hbr_tr == 1, 9, 1),
+  print_every_n = 100,
+  nthread = 12
 )
 xgb_pred <- predict(md_xgb, merged_va)
 get_auc(xgb_pred, merged_hbr_va)
+# 0.8530816
+
+plot_roc(xgb_pred, merged_hbr_va %>% as.factor())

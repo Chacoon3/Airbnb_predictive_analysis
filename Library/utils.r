@@ -594,7 +594,8 @@ get_dtm <- function(
     doc_prop_min = 0,
     doc_prop_max = 1,
     custom_stop_words = NULL,
-    tf_idf = T
+    tf_idf = T,
+    binary = F
 ) {
   
   # inner function
@@ -648,7 +649,7 @@ get_dtm <- function(
     create_vocabulary(
       ngram = ngram
     ) %>%
-    prune_vocabulary(
+    text2vec::prune_vocabulary(
       doc_proportion_min = doc_prop_min,
       doc_proportion_max = doc_prop_max
     )
@@ -661,6 +662,10 @@ get_dtm <- function(
     dtm_data = mlapi::fit_transform(x = dtm_data, model = tfidf)
   }
   
+  if (binary) {
+    dtm_data = dtm_data > 0 + 0
+  }
+  
   return(dtm_data)
 }
 
@@ -668,6 +673,63 @@ get_dtm <- function(
 subset_dtm <- function(dtm, vec_col_name) {
   res <- dtm[, which(colnames(dtm) %in% vec_col_name)] 
   return(res)
+}
+
+
+get_final_dtm <- function(x, binary = T) {
+  
+  print('generating final dtm')
+  
+  # amenities pruned dtm 
+  dtm_am_pruned <- get_dtm(
+    x$amenities, tf_idf = T,
+    doc_prop_min = 0.01, doc_prop_max = 0.7, binary = binary
+  )
+
+  print('20% completed')
+  
+  # description dtm
+  dtm_desc <- get_dtm(
+    x$description, tf_idf = T, 
+    doc_prop_min = 0.01, doc_prop_max = 0.7, binary = binary
+  )
+
+  print('40% completed')
+  
+  # house_rules dtm
+  # dtm_hr <- get_dtm(x$house_rules, doc_prop_min = 0.01, doc_prop_max = 0.7)
+
+  
+  # interaction dtm
+  dtm_itrt <- get_dtm(
+    x$interaction, doc_prop_min = 0.01, doc_prop_max = 0.7, binary = binary)
+  print('60% completed')
+
+
+  # transit dtm
+  dtm_transit <- get_dtm(
+    x$transit, doc_prop_min = 0.01, doc_prop_max = 0.7, binary = binary
+    )
+  print('80% completed')
+  
+  
+  # summary dtm
+  dtm_summary <- get_dtm(x$summary, doc_prop_min = 0.01, doc_prop_max = 0.7,
+                         binary = binary)
+  
+  # host verification dtm
+  # dtm_hv <- get_dtm(x$host_verifications, doc_prop_min = 0.01, doc_prop_max = 0.7)
+  # dtm_hv_train = dtm_hv[1:train_length, ]
+  # dtm_hv_te = dtm_hv[(train_length + 1): nrow(dtm_hv), ]
+  
+  
+  dtm_final = cbind(
+    dtm_am_pruned, dtm_desc, dtm_itrt, dtm_transit, dtm_summary
+  )
+  
+  print('100% completed')
+  
+  return(dtm_final)
 }
 
 
@@ -690,4 +752,27 @@ get_vip_dataframe <- function(md, x) {
       desc(Sign), desc(Importance)
     )
   return(res)
+}
+
+
+over_sampling <- function(x, y, over_p = T, p = 1, n = 0, prop = 0.3) {
+  
+  if (prop > 1 || prop < 0) {
+    stop('prop must be within 0 and 1')
+  }
+  
+  if (over_p) {
+    x_ = x[, y == p]
+  }
+  else{
+    x_ = x[, y == n]
+  }
+  
+  ind_extra = sample(1:nrow(x_), prop * nrow(x_))
+  
+  x_extra = x_[ind_extra, ]
+  
+  return(
+    rbind(x, x_extra)
+  )
 }

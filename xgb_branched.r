@@ -12,11 +12,6 @@ library(glmnet)
 folder_dir = r"(C:\Users\Chaconne\Documents\学业\Projects\Airbnb_predictive_analysis\Data)"
 
 
-
-# This line needs only to be run once, which exports two csv files, one for the training X's, the other for the testing X's. Once the two files were created you only need to run the read.csv statements under this line.
-# export_cleaned(folder_dir)
-
-
 # read
 # x_train <- read.csv('Data\\x_train_clean.csv')
 # x_test <- read.csv('Data\\x_test_clean.csv')
@@ -82,20 +77,32 @@ cleaning_test <- function(df){
            time_host_since=as.duration(time_host_since)/dyears(x=1),
            host_local= ifelse(as.character(host_neighbourhood)==as.character(neighbourhood), TRUE, FALSE)
     )
+  
+  # market
   df <- df %>%
     group_by(market) %>%
     mutate(market_freq = n()) %>%
     ungroup() %>%
-    mutate(market = ifelse(market_freq >= quantile(market_freq,0.25), as.character(market), 'Other'),
-           market = as.factor(market))
+    mutate(
+      market = 
+        ifelse(market_freq >= quantile(market_freq,0.25), 
+               as.character(market), 'Other') %>% as.factor()
+      )
+  
+  # city name
   df <- df %>%
     group_by(city_name) %>%
     mutate(city_freq = n()) %>%
     ungroup() %>%
-    mutate(city_name = ifelse(city_freq >=quantile (city_freq,0.25), as.character(city_name), 'Other'),
-           city_name=as.factor(city_name))  
+    mutate(
+      city_name = 
+        ifelse(
+          city_freq >=quantile (city_freq,0.25), 
+          as.character(city_name), 'Other') %>% as.factor()
+      )  
   
   
+  # deletion
   df$city <- NULL
   df$host_acceptance_rate <- NULL
   df$host_response_rate <-NULL
@@ -134,16 +141,21 @@ cleaning_test <- function(df){
   }
   return(df)}
 
-x_all <- cleaning_test(x) %>% 
-  select(!c('amenities', 'latitude', 'longitude'))
+
+indice_amenities = 70:107
+x_all <- cleaning_test(x[, -indice_amenities]) %>% 
+  select(!c(
+      'amenities', 'latitude', 'longitude', 
+      'city_freq', 'market_freq', 'license'
+    ))
 tr = x_all[1:nrow(x_train), ]
 te = x_all[(nrow(x_train) + 1) : nrow(x_all), ]
 
 
 #check if there any character col
 sum(sapply(tr, is.character))
-
 colnames(tr)
+
 
 #create dummy variables
 dummy <- dummyVars(formula=~., data = rbind(tr, te),fullRank = T)
@@ -151,16 +163,18 @@ train_dum <- predict(dummy, newdata = tr)
 te_dum <- predict(dummy, newdata = te)
 
 #convert hbr into 1-0 variable
-y_train_hbr_1 <- ifelse(hbr == 'YES',1,0)
+hbr <- ifelse(hbr == 'YES',1,0)
 prs <- ifelse(prs == 'YES',1,0)
 
 sampled = sample(1:nrow(train_dum), 0.75 * nrow(train_dum))
 x_tr = train_dum[sampled, ]
 x_va = train_dum[-sampled, ]
-hbr_tr = y_train_hbr_1[sampled]
-hbr_va = y_train_hbr_1[-sampled]
+hbr_tr = hbr[sampled]
+hbr_va = hbr[-sampled]
 prs_tr = prs[sampled]
 prs_va = prs[-sampled]
+
+
 
 
 # grid search ---------------------
@@ -283,6 +297,8 @@ vs_res %>% arrange(measurement %>% desc())
 # 4     15   0.8965645
 
 
+colnames(x_tr)
+x_tr[,1] %>% summary()
 # train validation model --------------
 best_model <- xgboost(
   data = x_tr,
@@ -305,8 +321,6 @@ vip(best_model, 35)
 summary(best_model)
 
 
-cn <- colnames(x_tr)
-cn
 
 
 # train final model --------------------------
