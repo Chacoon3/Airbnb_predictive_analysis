@@ -211,7 +211,7 @@ dc_sean <- function(dataframe, with_sent = TRUE) {
                  dataframe$host_total_listings_count),
         host_response_time = # fixed 2023-4-5
           ifelse(is.na(dataframe$host_response_time), 
-                 get_mode(dataframe$host_response_time), 
+                 'Missing', 
                  dataframe$host_response_time),
         city = dataframe$city %>%
           tolower() %>%
@@ -330,8 +330,8 @@ dc_johannah <- function(dataframe) {
       host_acceptance_rate = parse_number(host_acceptance_rate, na = c("", "NA")),
       host_acceptance_rate = # 2023-4-5 fixed
         ifelse(
-          is.na(host_acceptance_rate), median(host_acceptance_rate, na.rm = TRUE), host_acceptance_rate
-        ),
+          is.na(host_acceptance_rate), 'Missing', host_acceptance_rate),
+
       host_acceptance= case_when(
         host_acceptance_rate == 100 ~ "ALL", 
         host_acceptance_rate < 100 ~ "SOME", 
@@ -348,7 +348,7 @@ dc_johannah <- function(dataframe) {
       host_response_rate = parse_number(host_response_rate, na = c("", "NA")),
       host_response_rate = # 2023-4-5 fixed
         ifelse(
-          is.na(host_response_rate), median(host_response_rate, na.rm = TRUE), host_response_rate
+          is.na(host_response_rate), 0, host_response_rate # may 10 fixed
         ),
       host_response=case_when(
         host_response_rate == 100 ~ "ALL", 
