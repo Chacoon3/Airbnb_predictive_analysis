@@ -230,15 +230,11 @@ dc_sean <- function(dataframe, with_sent = TRUE) {
 dc_xiaoze <- function(dataframe) {
   #edit NA columns
   #H
-  median_bathrooms <- median(dataframe$bathrooms, na.rm = TRUE)
-  dataframe$bathrooms[is.na(dataframe$bathrooms)] <- median_bathrooms
+  dataframe$bathrooms[is.na(dataframe$bathrooms)] <- 1
   #J
-  median_bedrooms <- median(dataframe$bedrooms, na.rm = TRUE)
-  dataframe$bedrooms[is.na(dataframe$bedrooms)] <- median_bedrooms
+  dataframe$bedrooms[is.na(dataframe$bedrooms)] <- 1
   #K
-  median_beds <- median(dataframe$beds, na.rm = TRUE)
-  #dataframe$beds[is.na(dataframe$bathrooms)] <- median_beds
-  dataframe$beds[is.na(dataframe$beds)] <- median_beds # 2023-4-4 fixed
+  dataframe$beds[is.na(dataframe$beds)] <- 1 # 2023-4-4 fixed
   #M
   dataframe$city[is.na(dataframe$city)] <- "MISSING"
   #O

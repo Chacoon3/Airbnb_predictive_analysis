@@ -794,48 +794,49 @@ dtm_merged_va = dtm_merged_train[-ind_sample, ]
 ncol(dtm_merged_train)
 
 md <- glmnet(
-  x = dtm_merged_tr, y = hbr_tr,
-  weights = ifelse(hbr_tr == 1, 5, 1),
-  family = 'binomial',
-  alpha = 1,
-  lambda = 0.001,
-  parallel = T,
-  trace.it = T
-)
+    x = dtm_merged_tr, y = hbr_tr,
+    weights = ifelse(hbr_tr == 1, 5, 1),
+    family = 'binomial',
+    alpha = 1,
+    lambda = 0.001,
+    parallel = T
+  )
 
 pred <- predict(md, newx = dtm_merged_va, type = 'response')
 get_auc(pred, y_va)
-# 0.6990129 \\ 0.7681656
+# 0.6990129 \\ 0.7681656 \\ 0.7759867
+
+get_important_feature(md, dtm_merged_va, 0.75)
+get_vip_dataframe(md, dtm_merged_va) %>%
+  select(Importance) %>%
+  boxplot()
 
 
 md <- glmnet(
-  x = dtm_final_tr, y = hbr_tr,
-  weights = ifelse(hbr_tr == 1, 5, 1),
+  x = dtm_merged_tr, y = prs_tr,
+  weights = ifelse(prs_tr == 1, 5, 1),
   family = 'binomial',
   alpha = 1,
   lambda = 0.001,
   parallel = T
 )
 
-pred <- predict(md, newx = dtm_final_va, type = 'response')
-get_auc(pred, y_va)
-# 0.7696559
-df_vip = get_vip_dataframe(md, dtm_final_va)
+pred <- predict(md, newx = dtm_merged_va, type = 'response')
+get_auc(pred, prs_va)
+# 0.7696559 \\ 0.7035021
+
+
+df_vip = get_vip_dataframe(md, dtm_merged_tr)
 df_vip %>%
   arrange(desc(Sign), desc(Importance)) %>%
   head(20)
 
 
-# subset merged dtm -------------------
-df_vip <- get_vip_dataframe(md, dtm_merged_tr)
-df_vip$Importance %>% boxplot()
-df_vip$Importance %>% summary() # 3rd qu. 1.0445 
-important_token = df_vip %>%
-  filter(Importance >= quantile(Importance, 0.7)) %>%
-  select(Variable)
 
-important_token <- important_token$Variable
-length(important_token)
+
+# subset merged dtm -------------------
+important_token = get_important_feature(md, dtm_merged_tr, 0.75)
+
 
 dtm_subset_train <- subset_dtm(
   dtm_merged_train, important_token
@@ -846,26 +847,29 @@ dtm_subset_te <- subset_dtm(
 )
 
 
-# dtm_subset_train %>% colnames()
+get_baseline_accuracy(c(hbr_tr, hbr_va))
 
 dtm_subset_tr = dtm_subset_train[ind_sample, ]
 dtm_subset_va = dtm_subset_train[-ind_sample, ]
+
+
 md <- glmnet(
   x = dtm_subset_tr, y = hbr_tr,
-  weights = ifelse(hbr_tr == 1, 5, 1),
+  weights = ifelse(hbr_tr == 1, 1.6, 1),
   family = 'binomial',
   alpha = 1,
-  lambda = 0.001,
-  parallel = T,
-  trace.it = T
+  lambda = 0.000000001,
+  parallel = T
 )
 pred <- predict(md, newx = dtm_subset_va, type = 'response')
-get_auc(pred, y_va)
-# 0.755716
+get_auc(pred, y_va) 
+# 0.755716  \\ 0.7633405
+get_cutoff_dataframe(pred, y_va) %>%
+plot_cutoff_dataframe()
 
 
 vs_res <- vector_search(
-  x = rbind(dtm_merged_tr, dtm_merged_va),
+  x = rbind(dtm_subset_tr, dtm_subset_va),
   y = c(hbr_tr, hbr_va),
   vec_param1 = seq(0.000000001, 1, length.out = 50),
   trainer = \(x,y,p) {
@@ -891,17 +895,19 @@ vs_res <- vector_search(
       get_auc(y1, y2)
     )
   },
-  n_per_round = 2
+  n_per_round = 2,
+  verbose = T
 )
+
 vs_res %>%
   arrange(
     desc(measurement)
   )
 # 1.6 appears optimal for weight
-#   param1 measurement
-# 1    0.8   0.7663251
-# 2    1.2   0.7662225
-# 3    1.6   0.7660323
+#       param1 measurement
+# 1  0.000000001   0.7685309
+# 2  0.020408164   0.6999819
+# 3  0.040816327   0.6682916
 
 
 # logistic dummy test ----------
@@ -968,9 +974,11 @@ x_selected <- x_all %>%
     price,
     price_per_person,
     price_per_sqfeet,
-    # square_feet,
-    # bathrooms,
-    # cancellation_policy
+    country,
+    room_type,
+    neighbourhood,
+    is_business_travel_ready,
+    cancellation_policy
   ) %>%
   mutate(
     availability_30 = availability_30 %>% as.numeric(),
@@ -1000,6 +1008,8 @@ merged_tr = merged_train[ind_sample, ]
 merged_va = merged_train[-ind_sample, ]
 merged_hbr_tr = y_train$high_booking_rate[ind_sample]
 merged_hbr_va = y_train$high_booking_rate[-ind_sample]
+merged_prs_tr = y_train$perfect_rating_score[ind_sample]
+merged_prs_va = y_train$perfect_rating_score[-ind_sample]
 ncol(merged_tr)
 
 md_merged <- glmnet(
@@ -1012,7 +1022,7 @@ md_merged <- glmnet(
 
 pred <- predict(md_merged, newx = merged_va, type = 'response')
 get_auc(pred, merged_hbr_va)
-# 0.7871135 \\ 0.8005933
+# 0.7871135 \\ 0.8005933 \\ 0.8108367
 vip(md_merged, 35)
 
 
@@ -1036,19 +1046,40 @@ get_auc(hbr_prob_ranger, merged_hbr_va)
 
 md_xgb <- xgboost(
   data = merged_tr,
-  label = ifelse(merged_hbr_tr == 1, 1, 0),
+  label = ifelse(merged_hbr_tr == 'YES', 1, 0),
   max.depth = 7,
   eta = 0.06, 
   nrounds = 600,
   objective = "binary:logistic",
   eval_metric = "auc", 
   verbose = T,
-  weight = ifelse(merged_hbr_tr == 1, 9, 1),
+  weight = ifelse(merged_hbr_tr == 'YES', 9, 1),
   print_every_n = 100,
   nthread = 12
 )
 xgb_pred <- predict(md_xgb, merged_va)
 get_auc(xgb_pred, merged_hbr_va)
-# 0.8530816
+# 0.8530816 \\ 0.8600508
 
 plot_roc(xgb_pred, merged_hbr_va %>% as.factor())
+
+# cannot weight positive cases too high
+md_prs_xgb <- xgboost(
+  data = merged_tr,
+  label = ifelse(merged_prs_tr == 1, 1, 0),
+  max.depth = 7,
+  eta = 0.06, 
+  nrounds = 600,
+  objective = "binary:logistic",
+  eval_metric = "auc", 
+  verbose = T,
+  weight = ifelse(merged_prs_tr == 1, 1.5, 1),
+  print_every_n = 100,
+  nthread = 12
+)
+xgb_prs_pred <- predict(md_prs_xgb, merged_va)
+get_auc(xgb_prs_pred, merged_prs_va)
+get_cutoff_dataframe(xgb_prs_pred, merged_prs_va, step = 0.01) %>%
+  plot_cutoff_dataframe()
+
+

@@ -150,7 +150,8 @@ get_mode <- function(v) {
 
 # returns a data frame that provides insights regarding cutoff selection
 get_cutoff_dataframe <- 
-  function(y_pred_prob, y_valid_factor, level, max_fpr = 0.1, step = 0.001) {
+  function(y_pred_prob, y_valid_factor, 
+           level = c(0, 1), max_fpr = 0.1, step = 0.001) {
     
     if (length(y_pred_prob) != length(y_valid_factor)) {
       stop('prediction and validation have different lengths.')
@@ -176,7 +177,7 @@ get_cutoff_dataframe <-
     tpr = 0
     fpr = 0
     cutoff = 1
-    cutoff_bound <- 2
+    cutoff_bound <- NULL
     vec_tpr = c(tpr)
     vec_fpr = c(fpr)
     vec_cutoff = c(cutoff)
@@ -193,9 +194,9 @@ get_cutoff_dataframe <-
       vec_tpr = c(vec_tpr, tpr)
       vec_fpr = c(vec_fpr, fpr)
       
-      if (fpr > max_fpr && cutoff_bound > 1) {
-        cutoff_bound = cutoff
-        best_valid_tpr = tpr
+      if (fpr >= max_fpr && is.null(cutoff_bound)) {
+        cutoff_bound = vec_cutoff[which.max(vec_tpr)]
+        best_valid_tpr = max(vec_tpr)
       }
     }
     
@@ -325,6 +326,55 @@ compare_feature <- function(
     indice = sample(1:x_row, size = train_ratio * x_row)
     x_tr_def = x_def[indice, ]
     x_va_def = x_def[-indice, ]
+    y_tr = y[indice]
+    y_va = y[-indice]
+    x_tr_feat = x_feat[indice, ]
+    x_va_feat = x_feat[-indice, ]
+    
+    perf_def = trainer(x_tr_def, y_tr) %>%
+      predictor(x_va_def) %>%
+      measurer(y_va)
+    perf_feat = trainer(x_tr_feat, y_tr) %>%
+      predictor(x_va_feat) %>%
+      measurer(y_va)
+    
+    vec_measure_def[ind] = perf_def
+    vec_measure_feat[ind] = perf_feat
+    
+    counter = counter + 1
+    if (verbose) {
+      print(counter)
+    }
+  }
+  
+  res = data.frame(
+    n = 1:n,
+    default_performance = vec_measure_def,
+    new_feature_performance = vec_measure_feat
+  )
+  res[nrow(res) + 1, ] = c('average', mean(vec_measure_def), mean(vec_measure_feat))
+  res[nrow(res) + 1, ] = c('best', max(vec_measure_def), max(vec_measure_feat))
+  res[nrow(res) + 1, ] = c('min', min(vec_measure_def), min(vec_measure_feat))
+  res[nrow(res) + 1, ] = c('variance', var(vec_measure_def), var(vec_measure_feat))
+  
+  return(res)
+}
+
+
+compare_feature_2 <- function(
+    x_matrix, feat_vector, y, trainer,
+    predictor, measurer, n = 3, train_ratio = 0.7,
+    verbose = T) {
+  
+  vec_measure_def = rep(0, n)
+  vec_measure_feat = rep(0, n)
+  x_feat = cbind(x_matrix, feat_vector)
+  x_row = nrow(x_matrix)
+  counter = 0
+  for (ind in 1:n) {
+    indice = sample(1:x_row, size = train_ratio * x_row)
+    x_tr_def = x_matrix[indice, ]
+    x_va_def = x_matrix[-indice, ]
     y_tr = y[indice]
     y_va = y[-indice]
     x_tr_feat = x_feat[indice, ]
@@ -745,17 +795,41 @@ plot_tree <- function(dataframe, formula) {
 
 
 get_vip_dataframe <- function(md, x) {
-  plt_vip = vip(md, ncol(x))
-  res <- plt_vip$data %>%
-    as.data.frame() %>%
-    arrange(
-      desc(Sign), desc(Importance)
-    )
+  plt_vip = vip::vip(md, ncol(x))
+  if (any(colnames(plt_vip$data) == 'Sign')) {
+    res <- plt_vip$data %>%
+      as.data.frame() %>%
+      arrange(
+        desc(Sign), desc(Importance)
+      )
+  } else {
+    res <- plt_vip$data %>%
+      as.data.frame() %>%
+      arrange(
+        desc(Importance)
+      )
+  }
+
   return(res)
 }
 
 
-over_sampling <- function(x, y, over_p = T, p = 1, n = 0, prop = 0.3) {
+# returns a character vector storing the feature names whose importance metric
+# is not below the given quantile
+get_important_feature <- function(md, x, quantile_threshold = 0.75) {
+  
+  df_vip <- get_vip_dataframe(md, x)
+  
+  res <- df_vip %>%
+    arrange(desc(Importance)) %>%
+    filter(Importance >= quantile(Importance, quantile_threshold))
+
+  return(res$Variable)
+}
+
+
+# over sample the input x for a specific label.
+over_sampling <- function(x, y, over_p = T, p = 1, n = 0, p_prop = 0.3) {
   
   if (prop > 1 || prop < 0) {
     stop('prop must be within 0 and 1')
@@ -775,4 +849,12 @@ over_sampling <- function(x, y, over_p = T, p = 1, n = 0, prop = 0.3) {
   return(
     rbind(x, x_extra)
   )
+}
+
+
+float_truncate <- function(v, min = -Inf, max = Inf) {
+  v = ifelse(v > max, max, v)
+  v = ifelse(v < min, min, v)
+  
+  return(v)
 }

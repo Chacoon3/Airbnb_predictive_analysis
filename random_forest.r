@@ -27,7 +27,7 @@ feature_engineering_full_set <- function(df) {
     ungroup() %>%
     mutate(
       city = ifelse(
-        city_count <= 200, 'Other', city # originally 50
+        city_count <= quantile(city_count, 0.5), 'Other', city # originally 50
       ) %>% as.factor()
     ) %>%
     select(!city_count) %>%
@@ -38,7 +38,7 @@ feature_engineering_full_set <- function(df) {
     ungroup() %>%
     mutate(
       market = ifelse(
-        market_count <= 25, 'Other', market
+        market_count <= quantile(market_count, 0.5), 'Other', market
       ) %>% as.factor()
     ) %>%
     select(!market_count) %>%
@@ -52,7 +52,7 @@ feature_engineering_full_set <- function(df) {
     ) %>%
     ungroup() %>%
     mutate(
-      neighbourhood = ifelse(count_neighbor < 350, 'Other', neighbourhood) %>%
+      neighbourhood = ifelse(count_neighbor < quantile(count_neighbor, 0.5), 'Other', neighbourhood) %>%
         as.factor()
     ) %>%
     select(!count_neighbor) %>%
@@ -74,7 +74,7 @@ feature_engineering_full_set <- function(df) {
     ) %>%
     ungroup() %>%
     mutate(
-      state = ifelse(state_count <= 15, 'other', state) %>% as.factor()
+      state = ifelse(state_count <= quantile(state_count, 0.5), 'other', state) %>% as.factor()
     ) %>%
     select(
       !state_count
@@ -86,9 +86,9 @@ feature_engineering_full_set <- function(df) {
 
 feature_engineering <- function(x) {
   
-  high_hotel_rate_city = x_full_set$city %in% c(
-    'new york', 'miami', 'chicago', 'las vegas', 'san fransisco'
-  )
+  # high_hotel_rate_city = x_full_set$city %in% c(
+  #   'new york', 'miami', 'chicago', 'las vegas', 'san fransisco'
+  # )
   
   res <- x %>%
     select(
@@ -129,7 +129,7 @@ feature_engineering <- function(x) {
       require_guest_phone_verification,
       require_guest_profile_picture,
       room_type,
-      # state,
+      state,
       
       # added 2023-4-17
       `self check-in`,
@@ -157,17 +157,7 @@ feature_engineering <- function(x) {
       
       
       property_category,
-      price,
-      
-      
-      # access_snmt,
-      # desc_snmt,
-      # host_about_snmt,
-      # house_rules_snmt,
-      # interaction_snmt,
-      # neighborhood_snmt,
-      # notes_snmt,
-      # summary_snmt
+      price
     ) %>%
     mutate(
       country = ifelse(x$country_code == 'US', 'US', 'Other') %>%
@@ -192,7 +182,7 @@ feature_engineering <- function(x) {
       square_feet = 
         ifelse(x$square_feet == 0, median(x$square_feet), x$square_feet),
       
-      high_hotel_rate_city = high_hotel_rate_city
+      # high_hotel_rate_city = high_hotel_rate_city
   )
 
   
@@ -239,6 +229,8 @@ hbr_tr = hbr[sampled]
 hbr_va = hbr[-sampled]
 prs_tr = prs[sampled]
 prs_va = prs[-sampled]
+
+colnames(x_tr_rf)
 
 
 # feature comparing -----------------------
@@ -470,8 +462,12 @@ get_auc(y_pred_rf[,2], prs_va)
 # ranger hbr ---------------------------------
 md_hbr_ranger <- ranger(x = x_tr_rf, y = hbr_tr,
                  mtry=26, num.trees=600,
+                 max.depth = 7,
                  importance="impurity",
-                 probability = TRUE)
+                 probability = TRUE,
+                 num.threads = 12,
+                 class.weights = c(1, 7)
+                 )
 hbr_prob_ranger <- 
   predict(md_hbr_ranger, data = x_va_rf)$predictions[,2]
 plot_roc(hbr_prob_ranger, hbr_va)
@@ -656,9 +652,28 @@ logistic_lasso_prs <- glmnet(
   family="binomial"
 )
 
-pred_prob <- predict(logistic_lasso_prs, newx = x_va_rf, type = "response")
-get_auc(pred_prob, prs_va)
-vip(logistic_lasso_prs, num_features = 25)
+
+colnames(x_tr_rf)
+vec_am = 95:107
+x_tr_dum_filtered = x_tr_rf[, -vec_am]
+x_va_dum_filtered = x_va_rf[, -vec_am]
+
+logistic_lasso_hbr <- glmnet(
+  x = x_tr_dum_filtered, 
+  y = hbr_tr,
+  lambda = 10^-8, 
+  alpha = 1,
+  family="binomial",
+  parallel = T,
+  weights = ifelse(hbr_tr == 1, 1.6, 1)
+)
+
+pred_prob <- predict(logistic_lasso_hbr, newx = x_va_dum_filtered, type = "response")
+get_auc(pred_prob, hbr_va)
+# 0.8161548
+df_vip = get_vip_dataframe(logistic_lasso_hbr, x_va_rf)
+df_vip$Importance %>% boxplot()
+get_important_feature(logistic_lasso_hbr, x_va_dum_filtered)
 
 ggplot(
   data = data.frame(
