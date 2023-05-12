@@ -203,11 +203,11 @@ dc_sean <- function(dataframe, with_sent = TRUE) {
       mutate(
         host_listings_count =  # 2023-4-4 fixed
           ifelse(is.na(dataframe$host_listings_count),
-                 median(dataframe$host_listings_count, na.rm = TRUE),
+                 1,
                  dataframe$host_listings_count),
         host_total_listings_count = # 2023-4-4 fixed
           ifelse(is.na(dataframe$host_total_listings_count), 
-                 median(dataframe$host_total_listings_count, na.rm = TRUE),
+                 1,
                  dataframe$host_total_listings_count),
         host_response_time = # fixed 2023-4-5
           ifelse(is.na(dataframe$host_response_time), 
@@ -291,7 +291,7 @@ dc_jingruo <- function(df) {
     df[,i] <- str_detect(df$host_verifications, i)
   }
   #delete original column
-  df$verifications <- NULL
+  # df$verifications <- NULL
   
   return(df)
 }
@@ -307,12 +307,16 @@ dc_johannah <- function(dataframe) {
       jurisdiction_names=as.factor(jurisdiction_names),
       market = ifelse(is.na(market), 'Missing', market),
       market = as.factor(market),
+      
+      price = parse_number(price, na = c("", "NA")),
+      price = ifelse(is.na(price), median(price), price),
       monthly_price = parse_number(monthly_price, na = c("", "NA")),
-      monthly_price = ifelse(is.na(monthly_price),0,monthly_price),  #4-16: replacing value change from mean to 0
+      monthly_price = ifelse(is.na(monthly_price),
+                             30 * price, monthly_price),  
+      
       neighbourhood=ifelse(is.na(neighbourhood), "Missing", neighbourhood),
       neighbourhood=as.factor(neighbourhood),
       is_note=ifelse(is.na(notes), 0,1),
-      price = parse_number(price, na = c("", "NA")),
       property_type=ifelse(is.na(property_type), "Other",property_type),
       property_type=as.factor(property_type),
       property_category = ifelse(property_type %in% c('Apartment','Serviced apartment','Loft'), 'apartment', property_type),
@@ -328,9 +332,9 @@ dc_johannah <- function(dataframe) {
       extra_people=ifelse(is.na(extra_people), 0, extra_people),
       has_about=ifelse(is.na(host_about), 0,1),
       host_acceptance_rate = parse_number(host_acceptance_rate, na = c("", "NA")),
-      host_acceptance_rate = # 2023-4-5 fixed
-        ifelse(
-          is.na(host_acceptance_rate), 'Missing', host_acceptance_rate),
+      # host_acceptance_rate = # 2023-4-5 fixed
+      #   ifelse(
+      #     is.na(host_acceptance_rate), 'Missing', host_acceptance_rate),
 
       host_acceptance= case_when(
         host_acceptance_rate == 100 ~ "ALL", 
@@ -348,7 +352,7 @@ dc_johannah <- function(dataframe) {
       host_response_rate = parse_number(host_response_rate, na = c("", "NA")),
       host_response_rate = # 2023-4-5 fixed
         ifelse(
-          is.na(host_response_rate), 0, host_response_rate # may 10 fixed
+          is.na(host_response_rate), 'Missing', host_response_rate # May 10 fixed
         ),
       host_response=case_when(
         host_response_rate == 100 ~ "ALL", 
@@ -373,13 +377,15 @@ dc_quinn <- function(dataframe) {
         as.factor(),
       smart_location = ifelse(is.na(smart_location), 'MISSING', smart_location), # fixed 2023-4-6
       security_deposit=parse_number(security_deposit), #convert dollar to number
+      security_deposit = ifelse(is.na(security_deposit), 0, security_deposit), #replace na's with mean # 4-16: #4-16: replacing value change from mean to 0
+      
+      
       weekly_price=parse_number(weekly_price), #convert dollar to number
+      weekly_price = ifelse(is.na(weekly_price), 7 * price, weekly_price), #replace na's with m0
       room_type=as.factor(room_type), #category variable
       smart_location=as.factor(smart_location), #category variable - may be automatically generated
       #continuous variables replaced with mean, discrete with median
-      security_deposit = ifelse(is.na(security_deposit), 0, security_deposit), #replace na's with mean # 4-16: #4-16: replacing value change from mean to 0
-      square_feet = ifelse(is.na(square_feet), median(square_feet, na.rm = TRUE), square_feet), #replace na's with median
-      weekly_price = ifelse(is.na(weekly_price), 0, weekly_price), #replace na's with m0
+      square_feet = ifelse(is.na(square_feet), 'Missing', square_feet), #replace na's with median
       zipcode=ifelse(is.na(zipcode),"MISSING",zipcode) %>% as.factor()
     )
   detach(dataframe)

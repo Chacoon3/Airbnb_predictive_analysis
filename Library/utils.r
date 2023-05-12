@@ -846,25 +846,3 @@ over_sample <- function(y, over_p = T, p = 1, n = 0, p_prop = 0.3) {
   extra_index = sample(index, size = p_prop * length(index))
   return(extra_index)
 }
-
-
-float_truncate <- function(v, min = -Inf, max = Inf) {
-  v = ifelse(v > max, max, v)
-  v = ifelse(v < min, min, v)
-  
-  return(v)
-}
-
-
-filter_outlier <- function(obj_indexable, ref, outlier_value) {
-  ind_outlier = which(ref == outlier_value, arr.ind = T)
-  
-  if (is.vector(obj_indexable)) {
-    res = obj_indexable[-ind_outlier]
-  }
-  else {
-    res = obj_indexable[-ind_outlier, ]
-  }
-  
-  return(res)
-}
