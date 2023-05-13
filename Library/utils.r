@@ -279,7 +279,11 @@ find_monotonous <- function(df) {
 }
 
 
-cross_val <- function(trainer, predictor, measurer, x, y, fold_count = 5) {
+cross_val <- function(
+      trainer, predictor, measurer, 
+      x, y, fold_count = 5,
+      verbose = T
+    ) {
   if (nrow(x) != length(y)) {
     stop(
       "input x and y should be of the same number of rows!"
@@ -307,6 +311,12 @@ cross_val <- function(trainer, predictor, measurer, x, y, fold_count = 5) {
     y_pred <- predictor(model, x_va)
     m <- measurer(y_pred, y_va)
     vec_measure[ind] = m
+    
+    if (verbose) {
+      print(
+        paste('fold ', ind, ' completed', sep = '')
+      )
+    }
   }
   
   return(vec_measure)
@@ -480,7 +490,8 @@ vector_search <- function(
     vec_param1, x, y,
     trainer, predictor, measurer,
     verbose = T,
-    n_per_round = 2) {
+    n_per_round = 2
+    ) {
   
   
     n_per_round = check_npr(n_per_round)
@@ -518,6 +529,7 @@ vector_search <- function(
       )
     }
   }
+    
     return(res[2:nrow(res), ] %>% arrange(desc(measurement)))
 }
 
@@ -845,4 +857,114 @@ over_sample <- function(y, over_p = T, p = 1, n = 0, p_prop = 0.3) {
   
   extra_index = sample(index, size = p_prop * length(index))
   return(extra_index)
+}
+
+
+# returns the index of the first few wrong rankings
+get_wrong_ranking_index <- function(y_pred_prob, y_va, first_few = 1000, export = F, file = NULL, p = 1, n = 0) {
+  
+  df <- data.frame(
+    index = 1:length(y_pred_prob),
+    score = y_pred_prob,
+    label = y_va
+  ) %>%
+    arrange(
+      desc(score)
+    )
+  
+  last_true_p = max(which(df$label == p, arr.ind = T))
+  
+  current = 1
+  index_wrong_p = c()
+  while (first_few > 0 && current <= last_true_p) {
+    if (df$label[current] == n) {
+      index_wrong_p = c(index_wrong_p, current)
+      first_few = first_few - 1
+    }
+    
+    current = current + 1
+  }
+  
+  return(
+    index_wrong_p
+  )
+}
+
+
+plot_complexity_curve <- function(
+      x,y, vec_param1, 
+      trainer, predictor, measurer,
+      verbose = T, n_per_round = 3,
+      param_name = NULL
+    ) {
+  
+  
+  n_per_round = check_npr(n_per_round)
+  x_row = nrow(x)
+  res = data.frame(param1 = 0, measurement_tr = 0, measurement_va = 0)
+  index_folds <- cut(
+    1:x_row %>% sample(size = x_row), 
+    breaks=5, 
+    labels=FALSE
+  )
+  
+  for (ind in 1:length(vec_param1)) {
+    param1 = vec_param1[ind]
+    
+    vec_measure_tr = rep(0, n_per_round)
+    vec_measure_va = rep(0, n_per_round)
+    for (n in 1:n_per_round) {
+      indice_tr <- which(index_folds != n,arr.ind=TRUE)
+      x_tr = x[indice_tr, ]
+      x_va = x[-indice_tr, ]
+      y_tr = y[indice_tr]
+      y_va = y[-indice_tr]
+      
+      
+      model = trainer(x_tr, y_tr, param1)
+      pred_tr = predictor(model, x_tr)
+      meas_tr = measurer(pred_tr, y_tr)   
+      pred_va = predictor(model, x_va)
+      meas_va = measurer(pred_va, y_va)   
+      
+      
+      vec_measure_tr[n] = meas_tr
+      vec_measure_va[n] = meas_va
+    }
+    
+    res[(nrow(res) + 1), ] = c(param1, mean(vec_measure_tr), mean(vec_measure_va))
+    
+    if (verbose) {
+      print(
+        paste('round ', ind, ' completed')
+      )
+    }
+  }
+  
+  res = res[2:nrow(res), ] # remove the first row which is a place holder
+  optimal_param = vec_param1[which.max(res$measurement_va)]
+  
+  if (is.null(param_name)) {
+    param_name = 'param'
+  }
+
+  
+  return(
+      ggplot() + 
+      labs(
+        title = "Complexity Graph", subtitle = param_nam, 
+        caption = paste('optimal param: ', optimal_param, sep = '')
+      ) +
+      geom_line(
+        data = data.frame(param = res$param1, measure = res$measurement_tr), 
+        aes(x = param, y= measure, color = 'train')
+      ) +
+      geom_line(
+        data = data.frame(param = res$param1, measure = res$measurement_va),
+        aes(x = param, y =measure, color = 'valid')
+      ) + 
+      geom_vline(
+        xintercept = optimal_param, aes(x = optimal_param, color = 'optimal_param')
+      )
+  )
 }
