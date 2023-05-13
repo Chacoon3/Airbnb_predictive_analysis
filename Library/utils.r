@@ -509,7 +509,8 @@ vector_search <- function(
       
       vec_measure[n] = meas
     }
-    res[nrow(res) + 1, ] = c(param1, mean(vec_measure))
+
+    res[(nrow(res) + 1), ] = c(param1, mean(vec_measure))
 
     if (verbose) {
       print(
@@ -517,7 +518,7 @@ vector_search <- function(
       )
     }
   }
-    return(res[2:nrow(res), ])
+    return(res[2:nrow(res), ] %>% arrange(desc(measurement)))
 }
 
 
@@ -561,7 +562,7 @@ matrix_search <- function(
         vec_measure[n] = meas
       }
       
-      res[nrow(res) + 1, ] = c(param1, param2, mean(vec_measure))
+      res[(nrow(res) + 1), ] = c(param1, param2, mean(vec_measure))
       counter = counter + 1
       if (verbose) {
         print(
@@ -571,7 +572,7 @@ matrix_search <- function(
     }
   }
   
-  return(res[2:nrow(res), ])
+  return(res[2:nrow(res), ] %>% arrange(desc(measurement)))
 }
 
 
@@ -634,7 +635,7 @@ cube_search <- function(
     }
   }
   
-  return(res[2:nrow(res), ])
+  return(res[2:nrow(res), ] %>% arrange(desc(measurement)))
 }
 
 
@@ -828,33 +829,20 @@ get_important_feature <- function(md, x, quantile_threshold = 0.75) {
 }
 
 
-# over sample the input x for a specific label.
-over_sampling <- function(x, y, over_p = T, p = 1, n = 0, p_prop = 0.3) {
+# returns a sample of the given dataframe using over sampling
+over_sample <- function(y, over_p = T, p = 1, n = 0, p_prop = 0.3) {
   
-  if (prop > 1 || prop < 0) {
-    stop('prop must be within 0 and 1')
+  if (p_prop > 1 || p_prop < 0) {
+    stop('y_prop must be within 0 and 1')
   }
   
   if (over_p) {
-    x_ = x[, y == p]
+    index = which(y == p, arr.ind = T)
   }
-  else{
-    x_ = x[, y == n]
+  else {
+    index = which(y != p, arr.ind = T)
   }
   
-  ind_extra = sample(1:nrow(x_), prop * nrow(x_))
-  
-  x_extra = x_[ind_extra, ]
-  
-  return(
-    rbind(x, x_extra)
-  )
-}
-
-
-float_truncate <- function(v, min = -Inf, max = Inf) {
-  v = ifelse(v > max, max, v)
-  v = ifelse(v < min, min, v)
-  
-  return(v)
+  extra_index = sample(index, size = p_prop * length(index))
+  return(extra_index)
 }
