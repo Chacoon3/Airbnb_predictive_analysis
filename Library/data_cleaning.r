@@ -309,7 +309,8 @@ dc_johannah <- function(dataframe) {
       market = as.factor(market),
       
       price = parse_number(price, na = c("", "NA")),
-      price = ifelse(is.na(price), median(price), price),
+      price = ifelse(is.na(price), 0, price),
+      price = ifelse(is.na(price), 0, price),
       monthly_price = parse_number(monthly_price, na = c("", "NA")),
       monthly_price = ifelse(is.na(monthly_price),
                              30 * price, monthly_price),  
