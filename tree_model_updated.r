@@ -79,9 +79,6 @@ text(pruned_tree_1,pretty=1)
 
 
 
-############5/1: CODE BELOW HAS NOT BEEN FIXED TO MATCH WITH VARIABLE CHANGES YET
-
-
 accuracy <- function(classifications, actuals){
   correct_classifications <- ifelse(classifications == actuals, 1, 0)
   acc <- sum(correct_classifications)/length(classifications)
@@ -94,20 +91,24 @@ va_accs = c(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 
 num_sizes <- length(tree_sizes)
 for (i in c(1:num_sizes)){
-  va_accs[i] <- accuracy(ifelse(predict(prune.tree(full_tree, best = tree_sizes[i]),newdata=valid)[,2]>.5,"YES","NO"),valid$y_train_hbr)
-  tr_accs[i] <- accuracy(ifelse(predict(prune.tree(full_tree, best = tree_sizes[i]),newdata=train)[,2]>.5,"YES","NO"),train$y_train_hbr)
+  va_accs[i] <- accuracy(ifelse(predict(prune.tree(full_tree, best = tree_sizes[i]),newdata=x_va)>.5,1,0),hbr_va)
+  tr_accs[i] <- accuracy(ifelse(predict(prune.tree(full_tree, best = tree_sizes[i]),newdata=x_tr)>.5,1,0),hbr_tr)
 }
 
 plot(tree_sizes, tr_accs, col = "blue", type = 'l')
 lines(tree_sizes, va_accs, col = "red")
 
-tr_accs
-va_accs
+tr_accs # ranges from 0.7487097 to 0.7999867
+va_accs # ranges from 0.7484798 to 0.7907665
 
-#tr_accs ######run this to see accuracy on training data at different tree_sizes
-# ranges from 0.7486547 to 0.7895337
+tr_accs[8]
+va_accs[8]
 
 
+#preds_ridge <- predict(prune.tree(full_tree, best = tree_sizes[i]
+
+#pred_tree <- prediction(predict(prune.tree(full_tree, best = tree_sizes[i])),hbr_va)
+#auc_tree <- performance(pred_tree, measure = "auc")@y.values[[1]]
 
 
 
@@ -115,21 +116,41 @@ va_accs
 
 library(randomForest)
 
+rf.mod <- randomForest(hbr_tr ~ accommodates + availability_30 + 
+                 availability_365 + availability_60 + availability_90 + bathrooms+
+                 bed_type + bedrooms + beds + cancellation_policy+
+                 cleaning_fee+experiences_offered+extra_people +
+                 guests_included+host_acceptance_rate+host_has_profile_pic+
+                 host_identity_verified+host_is_superhost+host_listings_count+
+                 host_response_rate+
+                 host_total_listings_count+instant_bookable+
+                 is_business_travel_ready+is_location_exact+latitude+longitude+
+                 maximum_nights+minimum_nights+monthly_price+price+
+                 require_guest_phone_verification+require_guest_profile_picture+
+                 requires_license+room_type+security_deposit+square_feet+
+                 state+weekly_price+email+phone+google+reviews+
+                 jumio+kba+work_email+facebook+linkedin+selfie+government_id+
+                 identity_manual+amex+offline_government_id+sent_id+manual_offline+
+                 None+weibo+sesame+sesame_offline+manual_online+photographer+
+                 zhima_selfie+has_interaction+is_note+property_category+has_about+
+                 host_acceptance+has_host_name+host_response+has_house_rules,
+               #had to remove all character vars, all vars with factor levels>32, all vars with spaces in name
+               data = x_tr,
+               mtry=4, ntree=100,
+               importance=TRUE)
 
-rf.mod <- randomForest(y_train_hbr ~ accommodates + availability_30 + 
-                         availability_365 + availability_60 + availability_90 + bathrooms+
-                         bed_type + bedrooms + beds + cancellation_policy+
-                         cleaning_fee+experiences_offered+extra_people,
-                       data=xy_train,
-                       subset=train_inst,
-                       mtry=4, ntree=100,
-                       importance=TRUE)
 
-rf_preds <- predict(rf.mod, newdata=valid)
-rf_acc <- mean(ifelse(rf_preds==valid$y_train_hbr,1,0))
+rf_preds <- predict(rf.mod, newdata=x_va)
+#rf_thresh <- ifelse(rf_preds>.5,1,0)
+#rf_acc <- mean(ifelse(rf_thresh==hbr_va,1,0))
+#va_accs[i] <- accuracy(ifelse(predict(prune.tree(full_tree, best = tree_sizes[i]),newdata=x_va)>.5,1,0),hbr_va)
+rf_acc_va <- accuracy(ifelse(rf_preds>.5,1,0),hbr_va)
 
-rf.mod
-rf_acc
+rf_preds_tr <- predict(rf.mod, newdata=x_tr)
+rf_acc_tr <- accuracy(ifelse(rf_preds_tr>.5,1,0),hbr_tr)
+
+rf_acc_tr
+rf_acc_va
 
 #plot the variable importances (the average decrease in impurity when splitting across that variable)
 importance(rf.mod)
