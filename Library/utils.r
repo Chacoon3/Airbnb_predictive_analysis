@@ -50,18 +50,18 @@ get_fpr <- function(pred_y_prob, valid_y_factor, cutoff = 0.5, p = 1, n = 0) {
 }
 
 
-plot_roc_ggplot <- function(pred_y_prob, valid_y_factor, step_length = 0.01, p = 1, n = 0) {
+plot_roc_ggplot <- function(pred_y_prob, valid_y, step_length = 0.01, p = 1, n = 0) {
   
-  total_p = sum(valid_y_factor == p)
-  total_n = sum(valid_y_factor == n)
+  total_p = sum(valid_y == p)
+  total_n = sum(valid_y == n)
   vec_tpr = c()
   vec_fpr = c()
   cutoff = 0 + step_length
   while (cutoff <= 1) {
       pred = ifelse(pred_y_prob >= cutoff, p, n)
       
-      pred_tp = sum(pred == valid_y_factor & pred == p)
-      pred_fp = sum(pred != valid_y_factor & pred == p)
+      pred_tp = sum(pred == valid_y & pred == p)
+      pred_fp = sum(pred != valid_y & pred == p)
       
       tpr = pred_tp / total_p
       fpr = pred_fp / total_n
@@ -84,7 +84,10 @@ plot_roc_ggplot <- function(pred_y_prob, valid_y_factor, step_length = 0.01, p =
 
 
 get_learning_curve_data <- function(
-    x, y, trainer, predictor, measurer, vec_train_ratio = 1:18 /20, heldout_ratio = 0.2) {
+      x, y, 
+      trainer, predictor, measurer, 
+      vec_train_ratio = 1:18 /20, heldout_ratio = 0.2
+    ) {
   
   x_row = nrow(x)
   indice_use = sample(1:x_row, (1 - heldout_ratio) * x_row)
@@ -174,16 +177,14 @@ get_cutoff_dataframe <-
     }
     
     
-    tpr = 0
-    fpr = 0
+
     cutoff = 1
     cutoff_bound <- NULL
-    vec_tpr = c(tpr)
-    vec_fpr = c(fpr)
-    vec_cutoff = c(cutoff)
+    vec_tpr = c()
+    vec_fpr = c()
+    vec_cutoff = c()
     best_valid_tpr = 0
     while (cutoff >= 0 ) {
-      cutoff = cutoff - step
       # print(cutoff)
       y_pred = ifelse(y_pred_prob >= cutoff, level[2], level[1])
       tpr = get_tpr(y_pred, y_valid_factor)
@@ -194,10 +195,13 @@ get_cutoff_dataframe <-
       vec_tpr = c(vec_tpr, tpr)
       vec_fpr = c(vec_fpr, fpr)
       
+      
       if (fpr >= max_fpr && is.null(cutoff_bound)) {
-        cutoff_bound = vec_cutoff[which.max(vec_tpr)]
+        cutoff_bound = cutoff
         best_valid_tpr = max(vec_tpr)
       }
+      
+      cutoff = cutoff - step
     }
     
     
@@ -214,7 +218,7 @@ get_cutoff_dataframe <-
   }
 
 
-# plota a cutoff data frame, i.e. cutoff over trp and fpr
+# plota a cutoff data frame, i.e. trp and fpr over cutoff
 plot_cutoff_dataframe <- function(df) {
   return(
     ggplot(data = df, aes(x = cutoff, y = metric, color = type)) +
@@ -279,6 +283,7 @@ find_monotonous <- function(df) {
 }
 
 
+# cross validation 
 cross_val <- function(
       trainer, predictor, measurer, 
       x, y, fold_count = 5,
@@ -417,56 +422,6 @@ compare_feature_2 <- function(
   res[nrow(res) + 1, ] = c('variance', var(vec_measure_def), var(vec_measure_feat))
   
   return(res)
-}
-
-
-grid_search_xgb <- function(
-    x_tr, y_tr, x_va, y_va, 
-    vec_tree_depth, 
-    vec_nround,
-    vec_eta_set,
-    report_progress = T
-){
-  
-  #an empty dataframe to store auc
-  auc_df = data.frame(depth = c(0),
-                      nround = c(0),
-                      eta_set=c(0),
-                      auc = c(0))
-  
-  counter = 0
-  #nested loops to tune these three parameters
-  for(i in c(1:length(vec_tree_depth))){
-    for(j in c(1:length(vec_nround))){
-      for(k in c(1:length(vec_eta_set))){
-        thisdepth <- vec_tree_depth[i]
-        thisnrounds <- vec_nround[j]
-        thiseta <- vec_eta_set[k]
-        
-        inner_bst <- xgboost(
-          data = x_tr,
-          label = y_tr,
-          max.depth = thisdepth,
-          eta = thiseta, 
-          nrounds = thisnrounds,
-          objective = "binary:logistic",
-          eval_metric = "auc", 
-          verbose = F
-        )
-        
-        inner_bst_pred <- predict(inner_bst, x_va)
-        auc_valid <- get_auc(inner_bst_pred, y_va)
-        auc_df[nrow(auc_df)+1,] <- c(thisdepth,thisnrounds,thiseta,auc_valid)
-        
-      }
-      counter = counter + 1
-      if (report_progress) {
-        print(counter)
-      }
-    }
-  }
-  
-  return(auc_df)
 }
 
 
@@ -841,54 +796,195 @@ get_important_feature <- function(md, x, quantile_threshold = 0.75) {
 }
 
 
-# returns a sample of the given dataframe using over sampling
-over_sample <- function(y, over_p = T, p = 1, n = 0, p_prop = 0.3) {
+
+add_new_feature <- function(
+    x_main, new_feat, feat_name  
+) {
+  x_main = data.frame(
+    x_main,
+    feat_name = new_feat
+  )
+  colnames(x_main)[length(colnames(x_main))] = feat_name
   
-  if (p_prop > 1 || p_prop < 0) {
-    stop('y_prop must be within 0 and 1')
+  return(x_main)
+}
+
+
+# count how many geo coordinates are within the raius of the input coordinate
+count_station <- function(
+    vec_lat, vec_lng,
+    ref_lat, ref_lng,
+    radius_km = 2,
+    verbose = T
+) {
+  
+  start = 1
+  end = 0
+  res = c()
+  while (end < length(vec_lat)) {
+    end = min(end + 10000, length(vec_lat))
+    
+    sub_res = geodist(
+      x = data.frame(
+        latitude = vec_lat[start:end],
+        longitude = vec_lng[start:end]
+      ),
+      y = data.frame(
+        latitude = ref_lat,
+        longitude = ref_lng
+      ),
+      quiet = T
+    ) %>%
+      apply(
+        MARGIN = 1,
+        FUN = \(r) {
+          return(
+            # distance calculated are in metres by default
+            sum(r <= radius_km * 1000)
+          )
+        }
+      )
+    
+    res = c(res, sub_res)
+    
+    start = start + 10000
+    
+    if (verbose) {
+      print(
+        paste(
+          round(start * 100 / length(vec_lat), 2), '% completed', sep = ''
+        )
+      )
+    }
   }
   
-  if (over_p) {
-    index = which(y == p, arr.ind = T)
+  return(res)
+}
+
+
+# train several models using the input x and y and returns them as a list
+joint_train <- function(
+    x, y,
+    list_trainer,
+    vec_model_names = NULL # names of each model, if you want to specify
+) {
+  
+  list_model = list()
+  if (is.null(vec_model_names)) {
+    for (ind in 1:length(list_trainer)) {
+      md = list_trainer[[ind]](x,y)
+      list_model[[ind]] = md
+    }
   }
   else {
-    index = which(y != p, arr.ind = T)
+    for (ind in 1:length(list_trainer)) {
+      md = list_trainer[[ind]](x,y)
+      list_model[[vec_model_names[ind]]] = md
+    }
+  }
+
+
+  return(list_model)
+}
+# 
+# 
+
+
+# joint prediction using lists of models and predicting functiosn
+joint_predict <- function(
+    list_model,
+    x,
+    list_predictor,
+    # can be either a string specifying an function or a function
+    pred_aggregator = NULL, 
+    cut_off = NULL
+) {
+  
+  
+  predictor_len = length(list_predictor)
+  matrix_pred = matrix(nrow = nrow(x), ncol = length(list_model))
+  for (ind in 1:length(list_model)) {
+    pred = list_predictor[[min(ind, predictor_len)]](list_model[[ind]], x)
+    # print('pred')
+    # print(pred)
+    matrix_pred[, ind] = pred
   }
   
-  extra_index = sample(index, size = p_prop * length(index))
-  return(extra_index)
+  
+  if (is.null(pred_aggregator)) {
+    pred_aggregator = 'mean'
+  }
+  
+  res = apply(X = matrix_pred, MARGIN = 1, FUN = pred_aggregator)
+  
+  return(res)
 }
+
+
+get_cluster_label <- function(x, preprocess = NULL, n_center = 2, n_start = 10) {
+  
+  if (! is.null(preprocess)) {
+    x = x %>%
+      apply(MARGIN = 2, FUN = preprocess)
+  }
+
+  
+  md_km = kmeans(x,centers=n_center,nstart=n_start)
+  
+  return(md_km$cluster)
+}
+
+
+
+
+# returns a sample of the given dataframe using over sampling
+# over_sample <- function(y, over_p = T, p = 1, n = 0, p_prop = 0.3) {
+#   
+#   if (p_prop > 1 || p_prop < 0) {
+#     stop('y_prop must be within 0 and 1')
+#   }
+#   
+#   if (over_p) {
+#     index = which(y == p, arr.ind = T)
+#   }
+#   else {
+#     index = which(y != p, arr.ind = T)
+#   }
+#   
+#   extra_index = sample(index, size = p_prop * length(index))
+#   return(extra_index)
+# }
 
 
 # returns the index of the first few wrong rankings
-get_wrong_ranking_index <- function(y_pred_prob, y_va, first_few = 1000, export = F, file = NULL, p = 1, n = 0) {
-  
-  df <- data.frame(
-    index = 1:length(y_pred_prob),
-    score = y_pred_prob,
-    label = y_va
-  ) %>%
-    arrange(
-      desc(score)
-    )
-  
-  last_true_p = max(which(df$label == p, arr.ind = T))
-  
-  current = 1
-  index_wrong_p = c()
-  while (first_few > 0 && current <= last_true_p) {
-    if (df$label[current] == n) {
-      index_wrong_p = c(index_wrong_p, current)
-      first_few = first_few - 1
-    }
-    
-    current = current + 1
-  }
-  
-  return(
-    index_wrong_p
-  )
-}
+# get_wrong_ranking_index <- function(y_pred_prob, y_va, first_few = 1000, export = F, file = NULL, p = 1, n = 0) {
+#   
+#   df <- data.frame(
+#     index = 1:length(y_pred_prob),
+#     score = y_pred_prob,
+#     label = y_va
+#   ) %>%
+#     arrange(
+#       desc(score)
+#     )
+#   
+#   last_true_p = max(which(df$label == p, arr.ind = T))
+#   
+#   current = 1
+#   index_wrong_p = c()
+#   while (first_few > 0 && current <= last_true_p) {
+#     if (df$label[current] == n) {
+#       index_wrong_p = c(index_wrong_p, current)
+#       first_few = first_few - 1
+#     }
+#     
+#     current = current + 1
+#   }
+#   
+#   return(
+#     index_wrong_p
+#   )
+# }
 
 
 plot_complexity_curve <- function(
@@ -952,7 +1048,7 @@ plot_complexity_curve <- function(
   return(
       ggplot() + 
       labs(
-        title = "Complexity Graph", subtitle = param_nam, 
+        title = "Complexity Graph", subtitle = param_name, 
         caption = paste('optimal param: ', optimal_param, sep = '')
       ) +
       geom_line(
@@ -964,7 +1060,36 @@ plot_complexity_curve <- function(
         aes(x = param, y =measure, color = 'valid')
       ) + 
       geom_vline(
-        xintercept = optimal_param, aes(x = optimal_param, color = 'optimal_param')
+        xintercept = optimal_param
       )
   )
+}
+
+
+# create boosting by training one model several times on samples
+single_ensemble <- function(
+    x, y,
+    trainer,
+    verbose = T,
+    ensemble_size  = 10,
+    sample_prop = 0.618
+) {
+  
+  list_boost = list()
+  x_row = nrow(x)
+  for (ind in 1:ensemble_size) {
+    ind_sample = sample(1:x_row, size = sample_prop * x_row)
+    md = trainer(x[ind_sample, ], y[ind_sample])
+    list_boost[[ind]] = md
+    
+    if (verbose) {
+      print(
+        paste(
+          'weak learner ', ind, ' completed', sep = ''
+        )
+      )
+    }
+  }
+  
+  return(list_boost)
 }

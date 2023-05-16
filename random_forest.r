@@ -94,9 +94,9 @@ feature_engineering <- function(x) {
     select(
       accommodates,
       availability_30,
-      availability_365,
       availability_60,
       availability_90,
+      availability_365,
       bathrooms,
       bedrooms,
       bed_type,

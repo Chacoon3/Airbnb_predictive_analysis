@@ -230,16 +230,16 @@ dc_sean <- function(dataframe, with_sent = TRUE) {
 dc_xiaoze <- function(dataframe) {
   #edit NA columns
   #H
-  dataframe$bathrooms[is.na(dataframe$bathrooms)] <- 1
+  # dataframe$bathrooms[is.na(dataframe$bathrooms)] <- 1
   #J
-  dataframe$bedrooms[is.na(dataframe$bedrooms)] <- 1
+  # dataframe$bedrooms[is.na(dataframe$bedrooms)] <- 1
   #K
-  dataframe$beds[is.na(dataframe$beds)] <- 1 # 2023-4-4 fixed
+  # dataframe$beds[is.na(dataframe$beds)] <- 0 # 2023-4-4 fixed
   #M
   dataframe$city[is.na(dataframe$city)] <- "MISSING"
   #O
   dataframe$cleaning_fee <- parse_number(dataframe$cleaning_fee)
-  dataframe$cleaning_fee <- ifelse(is.na(dataframe$cleaning_fee),0,dataframe$cleaning_fee)
+  # dataframe$cleaning_fee <- ifelse(is.na(dataframe$cleaning_fee),0,dataframe$cleaning_fee)
   
   
   #I:Create a new factor: bed_category is "bed" if the bed_type is Real Bed and "other" otherwise
@@ -260,7 +260,7 @@ dc_jingruo <- function(df) {
   df$amenities <-tolower(df$amenities)
   rep_str = c("smart tv"= "tv","cable tv" = "tv",
               "wifi" = "internet", "internets" = "internet", "wireless internet" = "internet",
-              "bathtub with shower chair"="bathtub","hot tub"="bathtub","jetted tub"="bathtub","private hot tub"="bathtub","shared hot tub"="bathtub", "soaking tub"="bathtub",
+              "bathtub with shower chair"="bathtub","hot tub"="bathtub","jetted tub"="bathtub","private hot tub"="bathtub","shared hot tub"="bathtub", "soaking tub"="bathtub", 
               "travel crib"="crib",
               "doorman" = "doorperson", "doorman entry" ="doorperson")
   df$amenities <- str_replace_all(df$amenities,rep_str )
@@ -368,8 +368,19 @@ dc_johannah <- function(dataframe) {
   return(res)
 }
 
-
+substr('123456', start = 1, stop = 5)
 dc_quinn <- function(dataframe) {
+  
+  clean_zipcode = function(z) {
+    if (length(z) >= 5) {
+      res = substr(z, 1, 5)
+    }
+    else {
+      res = 'NA'
+    }
+    
+    return(res)
+  }
   
   attach(dataframe)
   res <- dataframe %>%
@@ -387,7 +398,7 @@ dc_quinn <- function(dataframe) {
       smart_location=as.factor(smart_location), #category variable - may be automatically generated
       #continuous variables replaced with mean, discrete with median
       square_feet = ifelse(is.na(square_feet), 'Missing', square_feet), #replace na's with median
-      zipcode=ifelse(is.na(zipcode),"MISSING",zipcode) %>% as.factor()
+      zipcode=clean_zipcode(zipcode)
     )
   detach(dataframe)
   
@@ -408,8 +419,14 @@ get_cleaned <- function(folder_dir, with_sent = TRUE) {
   
   wd <- getwd()
   setwd(folder_dir)
-  x_train <- read.csv('airbnb_train_x_2023.csv')
-  x_test <- read.csv('airbnb_test_x_2023.csv')
+  x_train <- read.csv(
+      'airbnb_train_x_2023.csv',
+      colClasses = c('zipcode'='character')
+    )
+  x_test <- read.csv(
+      'airbnb_test_x_2023.csv',
+      colClasses = c('zipcode'='character')
+    )
   y_train <- read.csv('airbnb_train_y_2023.csv')
   setwd(wd)
   
