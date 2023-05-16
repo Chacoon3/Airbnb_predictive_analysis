@@ -2,8 +2,7 @@
 .Rhistory
 .RData
 .Ruserdata
-*.csv
-*.xlsx
+
 .RDataTmp
 draft.r
 Airbnb_predictive_analysis.Rproj
