@@ -140,7 +140,7 @@ train_length = nrow(y_train)
 
 
 # scratch ---------------
-# 
+
 # x_for_hbr$live_score %>% boxplot()
 # df_crime_rate %>% 
 #   select(
@@ -893,7 +893,9 @@ md_x_xgb <- xgboost(
 )
 xgb_x_pred <- predict(md_x_xgb, x_for_hbr_va)
 get_auc(xgb_x_pred, hbr_va)
-plot_roc_ggplot(xgb_x_pred, hbr_va)
+plot_roc(xgb_x_pred, hbr_va)
+get_cutoff_dataframe(xgb_x_pred, hbr_va) %>%
+  plot_cutoff_dataframe()
 # 0.7 ratio
 # 0.8917648 \\ 0.8946285 (added top dest) \\ 0.8897774 (add price outlier)
 # 0.8963029 \\ 0.8965139 \\ 0.9021844 \\ 0.901308 \\ 0.9017588 \\ 0.9021038
@@ -901,7 +903,7 @@ plot_roc_ggplot(xgb_x_pred, hbr_va)
 # get_vip_dataframe(md_x_xgb, x_for_hbr_va)
 
 # vip xgb --------------
-vip(md_x_xgb, 50)
+vip(md_x_xgb, 20)
 
 # error analysis ---------------
 df_res_pred <- 
@@ -1299,21 +1301,18 @@ md_xgb_prs <- xgboost(
   data = x_for_hbr_tr,
   label = ifelse(prs_tr == 1, 1, 0),
   max.depth = 9,
-  eta = 0.11,
-  nrounds = 325,
+  eta = 0.1,
+  nrounds = 450,
   objective = "binary:logistic",
-  verbose = F,
-  weight = ifelse(prs_tr == 1, 1.5, 1),
-  print_every_n = 100,
-  nthread = 12,
+  print_every_n = 200,
+  nthread = 14,
   eval_metric = "auc",
-  base_score = mean(ifelse(prs_tr == 1, 1, 0))
 )
 pred_prs_xgb <- predict(md_xgb_prs, x_for_hbr_va)
 get_auc(pred_prs_xgb, prs_va)
 # 0.7 ratio
-# 0.7999422 \\ 0.7970059
-get_cutoff_dataframe(pred_prs_xgb, prs_va, step = 0.001, max_fpr = 0.095) %>%
+# 0.7999422 \\ 0.7970059 \\ 0.8004872
+get_cutoff_dataframe(pred_prs_xgb, prs_va, step = 0.001, max_fpr = 0.07) %>%
   plot_cutoff_dataframe()
 
 
@@ -1324,22 +1323,22 @@ get_cutoff_dataframe(pred_prs_xgb, prs_va, step = 0.001, max_fpr = 0.095) %>%
 md_ranger_prs <- ranger(
   x = x_for_hbr_tr, y = prs_tr,
   max.depth = 26,
-  num.trees = 800,
+  num.trees = 1000,
   min.bucket = 10,
   importance = 'impurity',
   probability = T,
-  class.weights = c(1, 1.5),
-  num.threads = 12
+  num.threads = 14
 )
 pred_ranger_prs <- predict(
   md_ranger_prs, x_for_hbr_va
   )$predictions[,2]
 get_auc(pred_ranger_prs, prs_va)
-
+# 0.7860178
 
 get_cutoff_dataframe(pred_ranger_prs, prs_va, step = .001) %>%
   plot_cutoff_dataframe()
 
+# vip(md_ranger_prs, 50)
 
 # complexity analysis ranger prs ------------
 plot_complexity_curve(
@@ -1368,6 +1367,36 @@ plot_complexity_curve(
   measurer = get_auc,
   n_per_round = 3
 )
+
+
+# complexity analysis xgb prs ------------
+# max depth 7 appears optimal
+plot_complexity_curve(
+  x = rbind(x_for_hbr_tr, x_for_hbr_va),
+  y = c(prs_tr, prs_va),
+  vec_param1 = c(3,5,8), # optimal 
+  trainer = \(x,y,p1) {
+    return(
+      xgboost(
+        data = x,
+        label = ifelse(y == 1, 1, 0),
+        eta = 0.09,
+        max.depth = p1,
+        nrounds = 500,
+        objective = "binary:logistic",
+        eval_metric = "auc",
+        verbose = F,
+        weight = ifelse(y == 1, 1, 1),
+        print_every_n = 100,
+        nthread = 12
+      )
+    )
+  },
+  predictor = predict,
+  measurer = get_auc,
+  n_per_round = 2
+)
+
 
 
 # amenities unigram analysis -------------
@@ -1911,3 +1940,50 @@ write.table(
   )
 
 
+
+
+ncol(x_for_hbr_dum_train)
+# final draft ------------------
+write.csv(
+  x = x_for_hbr_tr[1:10, ],
+  file = r"(C:\Users\Chaconne\Documents\学业\Projects\Airbnb_predictive_analysis\Data\sample_cleaned_data.csv)"
+)
+
+
+df_lm = get_learning_curve_data(
+  x = rbind(x_for_hbr_tr, x_for_hbr_va),
+  y = c(hbr_tr, hbr_va),
+  trainer = \(x,y) {
+    return(
+      xgboost(
+        data = x,
+        label = ifelse(y == 1, 1, 0),
+        max.depth = 7,
+        eta = 0.09,
+        nrounds = 500,
+        objective = "binary:logistic",
+        verbose = T,
+        print_every_n = 100,
+        nthread = 12,
+        eval_metric = "auc"
+      )
+    )
+  },
+  predictor = predict,
+  measurer = get_auc
+)
+
+df_lm %>% names()
+ggplot2::ggplot(
+  data = df_lm,
+  aes(x = sample_size, y = performance)
+) + geom_path()
+
+
+plot_tree(dataframe = 
+            data.frame(
+              x_for_hbr_tr, hbr = hbr_tr
+            ),
+          formula = hbr~.,
+          2
+        )
