@@ -86,7 +86,8 @@ plot_roc_ggplot <- function(pred_y_prob, valid_y, step_length = 0.01, p = 1, n =
 get_learning_curve_data <- function(
       x, y, 
       trainer, predictor, measurer, 
-      vec_train_ratio = 1:18 /20, heldout_ratio = 0.2
+      vec_train_ratio = 1:8 / 0.1, heldout_ratio = 0.2,
+      verbose = T
     ) {
   
   x_row = nrow(x)
@@ -96,7 +97,7 @@ get_learning_curve_data <- function(
   y_use = y[indice_use]
   y_ho = y[-indice_use]
   
-  x_use_row = nrow(x_use)
+  x_tr_row = nrow(x_use)
   vec_sample_size = c()
   vec_meas = c()
   for (ind in 1:length(vec_train_ratio)) {
@@ -115,6 +116,12 @@ get_learning_curve_data <- function(
     
     # store measurement
     vec_meas = c(vec_meas, score)
+    
+    if (verbose) {
+      print(
+        paste('round ', ind, ' completed')
+      )
+    }
   }
   
   data_for_plot = data.frame(
@@ -751,10 +758,11 @@ get_final_dtm <- function(x, binary = T) {
 }
 
 
-plot_tree <- function(dataframe, formula) {
+plot_tree <- function(dataframe, formula, maxdepth = 5) {
   md_tree <- rpart(
     formula,
-    data = dataframe
+    data = dataframe,
+    control = rpart.control(maxdepth = maxdepth)
   )
   
   plot(md_tree)

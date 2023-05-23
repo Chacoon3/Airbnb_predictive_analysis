@@ -515,7 +515,9 @@ get_auc(pred_hbr_xgb, hbr_va)
 
 
 # cross validating xgb -------------------
+
 cv_res <- cross_val(
+  # trainer = example_trainer,
   trainer = \(x,y) {
     return( xgboost(
       data = x,
